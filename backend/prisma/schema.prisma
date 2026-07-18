@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- TABELAS ADMINISTRATIVAS ---
+
+model Empresa {
+  id             Int       @id @default(autoincrement())
+  nomeFantasia   String
+  cnpj           String    @unique
+  email          String
+  telefone       String?
+  cidade         String?
+  estado         String?
+  plano          String    @default("Basico")
+  ativo          Boolean   @default(true)
+  criadoEm       DateTime  @default(now())
+
+  usuarios       Usuario[]
+  pessoas        Pessoa[]
+  pesagens       Pesagem[]
+  transferencias Transferencia[]
+}
+
+model Usuario {
+  id         Int      @id @default(autoincrement())
+  empresaId  Int
+  nome       String
+  email      String   @unique
+  senhaHash  String
+  perfil     String   @default("Operador")
+  ativo      Boolean  @default(true)
+  criadoEm   DateTime @default(now())
+
+  empresa    Empresa  @relation(fields: [empresaId], references: [id])
+}
+
+// --- TABELAS DO ERP ---
+
+model Pessoa {
+  id             Int      @id @default(autoincrement())
+  empresaId      Int      
+  codigo         String
+  tipoCadastro   String   
+  nome           String
+  documento      String
+  cidade         String?
+  estado         String?
+  telefone       String?
+  categoria      String?
+  produtorRural  String?
+  limiteCredito  Float?
+  status         String   @default("Ativo")
+
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+}
+
+model Pesagem {
+  id             Int      @id @default(autoincrement())
+  empresaId      Int      
+  ticket         String
+  tipo           String   
+  fornecedor     String
+  produto        String
+  safra          String
+  pesoLiquido    Float
+  saldo          Float
+  status         String
+  data           String
+  hora           String
+
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+}
+
+model Transferencia {
+  id             Int      @id @default(autoincrement())
+  empresaId      Int      
+  de             String
+  para           String
+  produto        String
+  safra          String
+  qtd            Float
+  responsavel    String?
+  data           String
+  hora           String
+
+  empresa        Empresa  @relation(fields: [empresaId], references: [id])
+}
