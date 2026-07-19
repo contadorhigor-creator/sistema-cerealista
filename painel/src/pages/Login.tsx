@@ -12,7 +12,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch('SUA_URL_DO_BACKEND/login', {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
