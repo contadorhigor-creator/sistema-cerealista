@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from './supabaseClient';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,9 +19,9 @@ export default function Login() {
       });
 
       if (error) {
-        setError(error.message); // Exibe o erro real do Supabase
+        setError(error.message);
       } else {
-        navigate('/dashboard'); // Login realizado com sucesso!
+        navigate('/dashboard');
       }
     } catch (err) {
       setError('Erro inesperado de conexão');
