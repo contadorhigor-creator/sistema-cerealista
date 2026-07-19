@@ -1,30 +1,40 @@
-import { supabase } from './supabaseClient';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from './supabaseClient'; // Certifique-se de que o caminho está correto
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
+
+    console.log("Botão clicado. Tentando autenticar...");
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
         password: password,
       });
 
+      console.log("Retorno do Supabase:", { data, error });
+
       if (error) {
         setError(error.message);
       } else {
+        console.log("Autenticação bem-sucedida! Redirecionando para /dashboard");
         navigate('/dashboard');
       }
     } catch (err) {
-      setError('Erro inesperado de conexão');
+      console.error("Erro inesperado:", err);
+      setError('Ocorreu um erro inesperado. Verifique sua conexão.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -38,7 +48,7 @@ export default function Login() {
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+            {error && <p className="text-red-500 text-sm text-center font-semibold">{error}</p>}
             
             <div>
               <label className="block text-sm font-medium text-gray-700">E-mail</label>
@@ -46,6 +56,7 @@ export default function Login() {
                 type="email" 
                 required
                 className="mt-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 outline-none"
+                value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
@@ -56,15 +67,19 @@ export default function Login() {
                 type="password" 
                 required
                 className="mt-1 w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 outline-none"
+                value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
             
             <button 
               type="submit"
-              className="w-full bg-green-700 text-white py-3 rounded-lg font-semibold hover:bg-green-800 transition shadow-lg"
+              disabled={loading}
+              className={`w-full text-white py-3 rounded-lg font-semibold transition shadow-lg ${
+                loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-700 hover:bg-green-800'
+              }`}
             >
-              Entrar
+              {loading ? 'Carregando...' : 'Entrar'}
             </button>
           </form>
         </div>
