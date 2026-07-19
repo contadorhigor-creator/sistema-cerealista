@@ -1,3 +1,4 @@
+import { supabase } from '../supabaseClient';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,24 +13,18 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        // Salva o token no navegador
-        localStorage.setItem('token', data.token);
-        // Redireciona para o dashboard
-        navigate('/dashboard');
+      if (error) {
+        setError(error.message); // Exibe o erro real do Supabase
       } else {
-        setError(data.message || 'Erro ao fazer login');
+        navigate('/dashboard'); // Login realizado com sucesso!
       }
     } catch (err) {
-      setError('Erro de conexão com o servidor');
+      setError('Erro inesperado de conexão');
     }
   };
 
@@ -81,4 +76,4 @@ export default function Login() {
       </footer>
     </div>
   );
-} 
+}
