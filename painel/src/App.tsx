@@ -7,7 +7,7 @@ import Login from './Login';
 import Dashboard from './Dashboard';
 import CadastroPessoa from './CadastroPessoa'; 
 import Estoque from './Estoque';   
-import Pesagem from './Balanca'; // 👈 IMPORTAÇÃO ADICIONADA (Se o seu arquivo se chamar Pesagem.tsx, mude para './Pesagem')
+import Pesagem from './Pesagem'; // 👈 IMPORTAÇÃO ADICIONADA (Se o seu arquivo se chamar Pesagem.tsx, mude para './Pesagem')
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
