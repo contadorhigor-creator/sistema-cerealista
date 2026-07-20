@@ -5,6 +5,7 @@ import {
   Download, FileSpreadsheet, X, ChevronLeft, ChevronRight, UserSearch, FileText
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from './supabaseClient'; // ☁️ IMPORTAÇÃO DA NUVEM AQUI
 
 export default function Pesagem() {
   const [abaAtiva, setAbaAtiva] = useState('Nova Pesagem');
@@ -46,7 +47,7 @@ export default function Pesagem() {
   const [buscaTexto, setBuscaTexto] = useState('');
   const [ordenacao, setOrdenacao] = useState('Mais recente');
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const [pesagemModal, setPesagemModal] = useState<any>(null); // Para o modal da linha clicável
+  const [pesagemModal, setPesagemModal] = useState<any>(null);
 
   // --- ESTADOS: CONSULTA DE CLIENTE ---
   const [consultaCliente, setConsultaCliente] = useState('');
@@ -58,15 +59,31 @@ export default function Pesagem() {
     carregarTudo();
   }, []);
 
-  // Reseta a paginação ao mudar filtros
   useEffect(() => {
     setPaginaAtual(1);
   }, [filtroRapido, dataInicio, dataFim, filtroCliente, filtroProduto, filtroSafra, filtroTipo, buscaTexto, ordenacao]);
 
-  const carregarTudo = () => {
-    setHistorico(JSON.parse(localStorage.getItem('listaPesagens') || '[]'));
+  // 🚀 BUSCA TUDO DIRETO DA NUVEM E MANTÉM COMPATIBILIDADE COM SEU SISTEMA
+  const carregarTudo = async () => {
+    // 1. Carrega as Pessoas/Clientes da nuvem
+    const { data: clientesDB } = await supabase.from('pessoas').select('*').order('nome', { ascending: true });
+    if (clientesDB) setListaClientes(clientesDB);
+
+    // 2. Carrega as Pesagens da nuvem
+    const { data: pesagensDB } = await supabase.from('pesagens').select('*').order('id', { ascending: false });
+    if (pesagensDB) {
+      // Fazemos um "truque" para manter todo o seu código de interface funcionando sem mexer em nada:
+      // O Supabase tem um 'id' numérico, mas o seu sistema usa 'id' como o número do Ticket (ex: PES-000001)
+      const formatadas = pesagensDB.map(p => ({
+        ...p,
+        id_banco: p.id, // Guardamos o ID do banco escondido para usar na exclusão/edição
+        id: p.ticket    // O seu sistema continua lendo o id como ticket
+      }));
+      setHistorico(formatadas);
+    }
+
+    // Mantemos as listas menores no local por enquanto para não quebrar nada
     setTransferencias(JSON.parse(localStorage.getItem('listaTransferencias') || '[]'));
-    setListaClientes(JSON.parse(localStorage.getItem('listaPessoas') || '[]'));
     setListaMotoristas(JSON.parse(localStorage.getItem('listaMotoristas') || '[]'));
     setListaVeiculos(JSON.parse(localStorage.getItem('listaVeiculos') || '[]'));
     setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
@@ -104,7 +121,6 @@ export default function Pesagem() {
   const liquidoFinalAbs = magnitude - (magnitude * (percentualDesconto / 100));
   const liquidoFinal = tipoOperacao === 'ENTRADA' ? liquidoFinalAbs : -liquidoFinalAbs;
 
-  // Aviso de Saldo Negativo (Apenas na Nova Pesagem)
   const saldoAtualCarga = useMemo(() => {
     if (!fornecedor || !safra) return 0;
     let saldo = 0;
@@ -119,34 +135,52 @@ export default function Pesagem() {
   }, [historico, transferencias, fornecedor, safra]);
   const avisoSaldoNegativo = tipoOperacao === 'SAIDA' && (saldoAtualCarga - liquidoFinalAbs < 0);
 
-  // --- AÇÕES NOVA PESAGEM ---
+  // --- AÇÕES NOVA PESAGEM ☁️ ---
   const gerarProximoTicket = () => {
     if (historico.length === 0) return 'PES-000001';
-    const maxId = historico.reduce((max, p) => Math.max(max, parseInt(p.id.replace(/\D/g, '')) || 0), 0);
+    const maxId = historico.reduce((max, p) => Math.max(max, parseInt(p.id?.replace(/\D/g, '') || 0)), 0);
     return 'PES-' + String(maxId + 1).padStart(6, '0');
   };
 
-  const handleSalvar = (e: React.FormEvent) => {
+  const handleSalvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!safra) return alert('Selecione uma safra!');
+    
+    // Pega o número do ticket
     const ticketId = editando ? editando.id : gerarProximoTicket();
     
-    const novaPesagem = {
-      id: ticketId, tipo: tipoOperacao, fornecedor, produto, motorista, placa, safra,
+    const novaPesagemParaDB = {
+      ticket: ticketId,
+      tipo: tipoOperacao, fornecedor, produto, motorista, placa, safra,
       pesoEntrada: pEnt, pesoSaida: pSai, pesoLiquido: liquidoFinalAbs, saldo: liquidoFinal,
-      umidade, impureza, avarias,
+      umidade: Number(umidade) || 0, impureza: Number(impureza) || 0, avarias: Number(avarias) || 0,
       status: pSai > 0 ? 'Finalizado' : 'Pendente',
       observacao, notaFiscal, romaneio, armazem,
-      data: editando ? editando.data : new Date().toLocaleDateString(),
+      data: editando ? editando.data : new Date().toLocaleDateString('pt-BR'),
       hora: editando ? editando.hora : new Date().toLocaleTimeString('pt-BR')
     };
 
-    const listaAtualizada = editando ? historico.map(p => p.id === editando.id ? novaPesagem : p) : [novaPesagem, ...historico];
-    localStorage.setItem('listaPesagens', JSON.stringify(listaAtualizada));
+    let erroSupabase;
+
+    // Se tem editando.id_banco, significa que já existe lá na nuvem, então Atualiza
+    if (editando && editando.id_banco) {
+      const { error } = await supabase.from('pesagens').update(novaPesagemParaDB).eq('id', editando.id_banco);
+      erroSupabase = error;
+    } else {
+      // Inserção nova
+      const { error } = await supabase.from('pesagens').insert([novaPesagemParaDB]);
+      erroSupabase = error;
+    }
+
+    if (erroSupabase) {
+      console.error(erroSupabase);
+      return alert(`Erro ao salvar no banco! Detalhe: ${erroSupabase.message}`);
+    }
+
     setEditando(null);
     limparFormulario();
-    carregarTudo();
-    alert(`Ticket ${ticketId} salvo!`);
+    await carregarTudo(); // Recarrega da nuvem
+    alert(`Ticket ${ticketId} salvo na nuvem com sucesso! ☁️`);
   };
 
   const iniciarEdicao = (item: any) => {
@@ -168,7 +202,6 @@ export default function Pesagem() {
     setRomaneio(''); setArmazem('');
   };
 
-  // --- IMPRESSÃO E EXPORTAÇÃO ---
   const imprimirTicket = (item: any) => {
     const w = window.open('', '_blank');
     w?.document.write(`
@@ -209,15 +242,13 @@ export default function Pesagem() {
     setOrdenacao('Mais recente');
   };
 
-  // --- MOTOR DO HISTÓRICO (USEMEMO) ---
   const historicoFiltrado = useMemo(() => {
     let filtrado = [...historico];
 
-    // Filtros Rápidos & Período
     const hoje = new Date();
     filtrado = filtrado.filter(p => {
       const dataIso = converterDataBRParaISO(p.data);
-      const dataP = new Date(dataIso + 'T12:00:00'); // Evita fuso
+      const dataP = new Date(dataIso + 'T12:00:00');
 
       if (filtroRapido === 'Hoje') return dataIso === hojeISO;
       if (filtroRapido === 'Ontem') {
@@ -237,17 +268,15 @@ export default function Pesagem() {
       return true;
     });
 
-    // Selects
     if (filtroCliente !== 'Todos') filtrado = filtrado.filter(p => p.fornecedor === filtroCliente);
     if (filtroProduto !== 'Todos') filtrado = filtrado.filter(p => p.produto === filtroProduto);
     if (filtroSafra !== 'Todas') filtrado = filtrado.filter(p => p.safra === filtroSafra);
     if (filtroTipo !== 'Todos') filtrado = filtrado.filter(p => p.tipo === filtroTipo);
 
-    // Busca Texto
     if (buscaTexto) {
       const b = buscaTexto.toLowerCase();
       filtrado = filtrado.filter(p => 
-        p.id.toLowerCase().includes(b) || 
+        (p.id && p.id.toLowerCase().includes(b)) || 
         (p.fornecedor && p.fornecedor.toLowerCase().includes(b)) ||
         (p.motorista && p.motorista.toLowerCase().includes(b)) ||
         (p.placa && p.placa.toLowerCase().includes(b)) ||
@@ -255,10 +284,9 @@ export default function Pesagem() {
       );
     }
 
-    // Ordenação
     filtrado.sort((a, b) => {
-      if (ordenacao === 'Mais recente') return b.id.localeCompare(a.id);
-      if (ordenacao === 'Mais antigo') return a.id.localeCompare(b.id);
+      if (ordenacao === 'Mais recente') return (b.id || '').localeCompare(a.id || '');
+      if (ordenacao === 'Mais antigo') return (a.id || '').localeCompare(b.id || '');
       if (ordenacao === 'Maior peso') return b.pesoLiquido - a.pesoLiquido;
       if (ordenacao === 'Menor peso') return a.pesoLiquido - b.pesoLiquido;
       if (ordenacao === 'Cliente A-Z') return a.fornecedor.localeCompare(b.fornecedor);
@@ -269,7 +297,6 @@ export default function Pesagem() {
     return filtrado;
   }, [historico, filtroRapido, dataInicio, dataFim, filtroCliente, filtroProduto, filtroSafra, filtroTipo, buscaTexto, ordenacao]);
 
-  // Paginação e Estatísticas
   const paginasTotais = Math.ceil(historicoFiltrado.length / ITENS_POR_PAGINA);
   const itensPaginados = historicoFiltrado.slice((paginaAtual - 1) * ITENS_POR_PAGINA, paginaAtual * ITENS_POR_PAGINA);
 
@@ -283,22 +310,19 @@ export default function Pesagem() {
     return { entradas, saidas, saldo: entradas - saidas, qtdClientes: clientesSet.size, total: historicoFiltrado.length };
   }, [historicoFiltrado]);
 
-  // --- MOTOR DA CONSULTA DE CLIENTE ---
   const dadosConsulta = useMemo(() => {
     if (!consultaCliente) return null;
     let entradas = 0; let saidas = 0; let ultMov = ''; let extratoList: any[] = [];
     
-    // Pesagens
     historico.forEach(p => {
       if (p.status === 'Finalizado' && p.fornecedor === consultaCliente && (consultaSafra === '' || p.safra === consultaSafra)) {
         if(p.tipo === 'ENTRADA') entradas += p.pesoLiquido;
-        if(p.tipo === 'SAIDA') saidas += p.pesoLiquido;
+        if(p.tipo === 'SAIDA') saidas += Math.abs(p.pesoLiquido);
         if(!ultMov || p.data > ultMov) ultMov = p.data;
         extratoList.push({ data: p.data, id: p.id, op: p.tipo === 'ENTRADA' ? 'Pesagem ENTRADA' : 'Pesagem SAÍDA', produto: p.produto, peso: p.saldo });
       }
     });
 
-    // Transferencias
     transferencias.forEach(t => {
       if (consultaSafra === '' || t.safra === consultaSafra) {
         if (t.para === consultaCliente) {
@@ -327,7 +351,6 @@ export default function Pesagem() {
           <ArrowLeft size={20} /> Voltar ao Painel
         </Link>
 
-        {/* NAVEGAÇÃO ABAS PRINCIPAIS */}
         <div className="flex gap-4 border-b border-gray-200 print:hidden">
           {['Nova Pesagem', 'Histórico de Pesagens', 'Consulta de Cliente'].map(aba => (
             <button key={aba} onClick={() => {setAbaAtiva(aba); limparFormulario();}} className={`pb-3 font-bold text-lg transition-colors border-b-2 px-4 ${abaAtiva === aba ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-blue-500'}`}>
@@ -336,12 +359,8 @@ export default function Pesagem() {
           ))}
         </div>
 
-        {/* =========================================
-            ABA 1: NOVA PESAGEM (Mantida do anterior)
-        ============================================= */}
         {abaAtiva === 'Nova Pesagem' && (
           <div className="space-y-6 animate-fade-in print:hidden">
-            {/* FORMULÁRIO DE PESAGEM (Aquele robusto que já tínhamos feito) */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
               <div className="flex justify-between items-center mb-6 border-b pb-4">
                 <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -359,7 +378,7 @@ export default function Pesagem() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <select className="border p-3 rounded-lg md:col-span-2 bg-slate-50 outline-none" value={fornecedor} onChange={e=>setFornecedor(e.target.value)} required>
                       <option value="">Cliente / Fornecedor *</option>
-                      {listaClientes.map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                      {listaClientes.map(c => <option key={c.id || c.nome} value={c.nome}>{c.nome}</option>)}
                     </select>
                     <select className="border p-3 rounded-lg bg-slate-50 outline-none" value={safra} onChange={e=>setSafra(e.target.value)} required>
                       <option value="">Safra *</option>
@@ -401,7 +420,7 @@ export default function Pesagem() {
                       <p className="text-4xl font-bold text-white tracking-tight">{tipoOperacao === 'ENTRADA' ? '+' : '-'}{formatarPeso(liquidoFinalAbs)} <span className="text-lg font-normal opacity-80">kg</span></p>
                     </div>
                     <button className={`w-full text-white p-4 rounded-lg font-bold mt-4 flex justify-center items-center gap-2 shadow-lg transition-all ${tipoOperacao === 'ENTRADA' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-                      <Save size={20} /> Registrar {tipoOperacao}
+                      <Save size={20} /> Salvar na Nuvem
                     </button>
                     {editando && <button type="button" onClick={limparFormulario} className="w-full mt-2 text-gray-500 hover:text-gray-800 font-bold p-2">Cancelar Edição</button>}
                   </div>
@@ -411,12 +430,8 @@ export default function Pesagem() {
           </div>
         )}
 
-        {/* =========================================
-            ABA 2: HISTÓRICO DE PESAGENS
-        ============================================= */}
         {abaAtiva === 'Histórico de Pesagens' && (
           <div className="space-y-6 animate-fade-in">
-            {/* CARDS DE RESUMO DO FILTRO */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 print:hidden">
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-blue-500"><p className="text-xs font-bold text-gray-400 uppercase">Pesagens</p><p className="font-bold text-xl">{stats.total}</p></div>
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-green-500"><p className="text-xs font-bold text-gray-400 uppercase">Entradas (KG)</p><p className="font-bold text-xl text-green-600">{formatarPeso(stats.entradas)}</p></div>
@@ -425,7 +440,6 @@ export default function Pesagem() {
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-orange-500"><p className="text-xs font-bold text-gray-400 uppercase">Clientes</p><p className="font-bold text-xl text-orange-600">{stats.qtdClientes}</p></div>
             </div>
 
-            {/* PAINEL DE FILTROS */}
             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4 print:hidden">
               <div className="flex justify-between items-center border-b pb-4">
                 <div className="flex gap-2">
@@ -443,7 +457,7 @@ export default function Pesagem() {
               <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Data Inicial</label><input type="date" className="border p-2 rounded bg-slate-50" value={dataInicio} onChange={e=>setDataInicio(e.target.value)} /></div>
                 <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Data Final</label><input type="date" className="border p-2 rounded bg-slate-50" value={dataFim} onChange={e=>setDataFim(e.target.value)} /></div>
-                <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Cliente</label><select className="border p-2 rounded bg-slate-50" value={filtroCliente} onChange={e=>setFiltroCliente(e.target.value)}><option>Todos</option>{listaClientes.map(c=><option key={c.nome}>{c.nome}</option>)}</select></div>
+                <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Cliente</label><select className="border p-2 rounded bg-slate-50" value={filtroCliente} onChange={e=>setFiltroCliente(e.target.value)}><option>Todos</option>{listaClientes.map(c=><option key={c.id || c.nome}>{c.nome}</option>)}</select></div>
                 <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Safra</label><select className="border p-2 rounded bg-slate-50" value={filtroSafra} onChange={e=>setFiltroSafra(e.target.value)}><option>Todas</option>{listaSafras.map(s=><option key={s}>{s}</option>)}</select></div>
                 <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Tipo</label><select className="border p-2 rounded bg-slate-50" value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}><option>Todos</option><option>ENTRADA</option><option>SAIDA</option></select></div>
                 <div className="flex flex-col"><label className="text-xs font-bold text-gray-500 mb-1">Produto</label><select className="border p-2 rounded bg-slate-50" value={filtroProduto} onChange={e=>setFiltroProduto(e.target.value)}><option>Todos</option><option>Milho</option><option>Soja</option><option>Sorgo</option></select></div>
@@ -460,7 +474,6 @@ export default function Pesagem() {
               </div>
             </div>
 
-            {/* TABELA DE RESULTADOS */}
             <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm whitespace-nowrap">
@@ -475,7 +488,7 @@ export default function Pesagem() {
                   </thead>
                   <tbody>
                     {itensPaginados.map(p => (
-                      <tr key={p.id} className="border-b hover:bg-slate-50 cursor-pointer transition" onClick={() => setPesagemModal(p)}>
+                      <tr key={p.id_banco || p.id} className="border-b hover:bg-slate-50 cursor-pointer transition" onClick={() => setPesagemModal(p)}>
                         <td className="p-4 font-bold text-blue-700">{p.id}</td>
                         <td className="p-4 text-gray-600">{p.data} <span className="text-xs text-gray-400">{p.hora}</span></td>
                         <td className="p-4 font-medium text-gray-800">{p.fornecedor}</td>
@@ -493,7 +506,13 @@ export default function Pesagem() {
                         <td className="p-4 flex gap-2 justify-center print:hidden" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => imprimirTicket(p)} className="p-2 text-gray-500 hover:bg-gray-200 rounded"><Printer size={16}/></button>
                           <button onClick={() => iniciarEdicao(p)} className="p-2 text-blue-500 hover:bg-blue-100 rounded"><Edit size={16}/></button>
-                          <button onClick={() => {if(window.confirm('Excluir ticket?')) {localStorage.setItem('listaPesagens', JSON.stringify(historico.filter(i=>i.id !== p.id))); carregarTudo();}}} className="p-2 text-red-500 hover:bg-red-100 rounded"><Trash2 size={16}/></button>
+                          <button onClick={async (e) => {
+                            e.stopPropagation();
+                            if(window.confirm('Excluir ticket definitivamente da nuvem?')) {
+                              await supabase.from('pesagens').delete().eq('id', p.id_banco); 
+                              carregarTudo();
+                            }
+                          }} className="p-2 text-red-500 hover:bg-red-100 rounded"><Trash2 size={16}/></button>
                         </td>
                       </tr>
                     ))}
@@ -502,7 +521,6 @@ export default function Pesagem() {
                 </table>
               </div>
               
-              {/* PAGINAÇÃO */}
               {paginasTotais > 1 && (
                 <div className="bg-slate-50 p-4 border-t flex items-center justify-between print:hidden">
                   <p className="text-sm text-gray-500">Mostrando {(paginaAtual - 1) * ITENS_POR_PAGINA + 1} a {Math.min(paginaAtual * ITENS_POR_PAGINA, historicoFiltrado.length)} de {historicoFiltrado.length} registros</p>
@@ -519,9 +537,6 @@ export default function Pesagem() {
           </div>
         )}
 
-        {/* =========================================
-            ABA 3: CONSULTA DE CLIENTE
-        ============================================= */}
         {abaAtiva === 'Consulta de Cliente' && (
           <div className="space-y-6 animate-fade-in print:hidden">
             <div className="bg-white p-6 rounded-xl shadow-sm border flex gap-4">
@@ -529,7 +544,7 @@ export default function Pesagem() {
                 <label className="block text-sm font-bold text-gray-500 mb-2">Selecione o Cliente</label>
                 <select className="border p-3 rounded-lg w-full bg-slate-50 font-medium" value={consultaCliente} onChange={e=>setConsultaCliente(e.target.value)}>
                   <option value="">-- Buscar Cliente --</option>
-                  {listaClientes.map(c=><option key={c.id} value={c.nome}>{c.nome}</option>)}
+                  {listaClientes.map(c=><option key={c.id || c.nome} value={c.nome}>{c.nome}</option>)}
                 </select>
               </div>
               <div className="w-1/3">
@@ -578,7 +593,6 @@ export default function Pesagem() {
 
       </div>
 
-      {/* MODAL DE DETALHES DA PESAGEM */}
       {pesagemModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4 print:hidden" onClick={() => setPesagemModal(null)}>
           <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
