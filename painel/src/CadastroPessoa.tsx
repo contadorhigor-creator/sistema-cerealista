@@ -5,12 +5,8 @@ import {
   Tractor, X, Filter, FileSpreadsheet, Printer, ShieldAlert
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from './supabaseClient'; // 🚀 IMPORTAÇÃO DO SUPABASE ADICIONADA AQUI
+import { supabase } from './supabaseClient'; 
 
-// ============================================================================
-// SERVIÇOS DE INTEGRAÇÃO (Simulando a pasta /services)
-// Usando APIs públicas reais para CNPJ e CEP
-// ============================================================================
 const CepService = {
   buscarCEP: async (cep: string) => {
     const cepLimpo = cep.replace(/\D/g, '');
@@ -36,24 +32,20 @@ const CnpjService = {
 export default function CadastroPessoa() {
   const [abaAtiva, setAbaAtiva] = useState('Pessoas');
   
-  // --- ESTADOS: DADOS DO SISTEMA ---
   const [pessoas, setPessoas] = useState<any[]>([]);
   const [motoristas, setListaMotoristas] = useState<any[]>([]);
   const [veiculos, setListaVeiculos] = useState<any[]>([]);
-  const [safras, setListaSafras] = useState<string[]>([]);
+  const [safras, setListaSafras] = useState<any[]>([]);
   
-  // Para verificação de exclusão
   const [pesagens, setPesagens] = useState<any[]>([]);
   const [transferencias, setTransferencias] = useState<any[]>([]);
 
-  // --- ESTADOS: LISTAGEM DE PESSOAS ---
   const [busca, setBusca] = useState('');
   const [filtroTipo, setFiltroTipo] = useState('Todos');
   const [filtroStatus, setFiltroStatus] = useState('Todos');
   const [ordenacao, setOrdenacao] = useState('Nome A-Z');
-  const [pessoaModal, setPessoaModal] = useState<any>(null); // Modal de Visualização
+  const [pessoaModal, setPessoaModal] = useState<any>(null);
 
-  // --- ESTADOS: FORMULÁRIO DE PESSOA ---
   const [modoFormulario, setModoFormulario] = useState(false);
   const [loadingApi, setLoadingApi] = useState(false);
   
@@ -67,36 +59,31 @@ export default function CadastroPessoa() {
   };
   const [form, setForm] = useState<any>(formInicial);
 
-  // --- ESTADOS: OUTRAS ABAS ---
   const [auxMot, setAuxMot] = useState({ nome: '', cnh: '' });
   const [auxVei, setAuxVei] = useState({ placa: '', descricao: '' });
   const [auxSafra, setAuxSafra] = useState('');
 
   useEffect(() => { carregarDados(); }, []);
 
-  // 🚀 FUNÇÃO REESCRITA PARA BUSCAR DA NUVEM (SUPABASE)
+  // 🚀 TUDO BUSCANDO DO SUPABASE AGORA
   const carregarDados = async () => {
-    // Busca as Pessoas do Supabase
-    const { data, error } = await supabase.from('pessoas').select('*');
-    
-    if (error) {
-      console.error("Erro ao buscar pessoas do banco:", error);
-    } else if (data) {
-      setPessoas(data);
-    }
+    const { data: pesData } = await supabase.from('pessoas').select('*');
+    if (pesData) setPessoas(pesData);
 
-    // Por enquanto, mantemos as abas secundárias no local para não quebrar seu sistema 
-    // até criarmos as tabelas delas no Supabase futuramente.
-    setListaMotoristas(JSON.parse(localStorage.getItem('listaMotoristas') || '[]'));
-    setListaVeiculos(JSON.parse(localStorage.getItem('listaVeiculos') || '[]'));
-    setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
+    const { data: motData } = await supabase.from('motoristas').select('*');
+    if (motData) setListaMotoristas(motData);
+
+    const { data: veiData } = await supabase.from('veiculos').select('*');
+    if (veiData) setListaVeiculos(veiData);
+
+    const { data: safraData } = await supabase.from('safras').select('*');
+    if (safraData) setListaSafras(safraData);
+
+    // Esses mantemos local até criarmos as telas de transferência/pesagem definitivas
     setPesagens(JSON.parse(localStorage.getItem('listaPesagens') || '[]'));
     setTransferencias(JSON.parse(localStorage.getItem('listaTransferencias') || '[]'));
   };
 
-  // ============================================================================
-  // INTEGRAÇÕES DE API (CNPJ e CEP)
-  // ============================================================================
   const handleBuscarCNPJ = async () => {
     if (form.documento.replace(/\D/g, '').length !== 14) return;
     setLoadingApi(true);
@@ -145,9 +132,6 @@ export default function CadastroPessoa() {
     }
   };
 
-  // ============================================================================
-  // CRUD PESSOAS - 🚀 CONECTADO AO SUPABASE
-  // ============================================================================
   const gerarCodigoPessoa = () => {
     const prefixo = form.tipoCadastro.charAt(0).toUpperCase();
     const numero = String(pessoas.length + 1).padStart(4, '0');
@@ -166,29 +150,23 @@ export default function CadastroPessoa() {
       dataCadastro: isEdicao ? form.dataCadastro : new Date().toLocaleDateString('pt-BR')
     };
 
-    // Removemos o ID daqui para o banco gerar sozinho (ou para não bugar no Update)
     const { id, ...dadosParaSalvar } = cadastroFinal;
-
     let erroSupabase;
 
     if (isEdicao) {
-      // Atualizar registro existente no Supabase
       const { error } = await supabase.from('pessoas').update(dadosParaSalvar).eq('id', form.id);
       erroSupabase = error;
     } else {
-      // Inserir novo registro no Supabase
       const { error } = await supabase.from('pessoas').insert([dadosParaSalvar]);
       erroSupabase = error;
     }
 
-    // Se o banco reclamar de Segurança (RLS) ou colunas faltando, ele avisa aqui!
     if (erroSupabase) {
       console.error("Erro do Supabase:", erroSupabase);
       alert(`Erro ao salvar no banco! Detalhe: ${erroSupabase.message}`);
       return;
     }
 
-    // Deu tudo certo! Recarrega da nuvem e limpa a tela.
     await carregarDados(); 
     setModoFormulario(false);
     setForm(formInicial);
@@ -196,7 +174,6 @@ export default function CadastroPessoa() {
   };
 
   const handleExcluirPessoa = async (pessoa: any) => {
-    // Validação de Vínculos (Pesagens, Transf, Estoque)
     const temPesagem = pesagens.some(p => p.fornecedor === pessoa.nome);
     const temTransf = transferencias.some(t => t.de === pessoa.nome || t.para === pessoa.nome);
     
@@ -208,24 +185,17 @@ export default function CadastroPessoa() {
       if (!conf) return;
     }
 
-    // Deleta do Supabase
     const { error } = await supabase.from('pessoas').delete().eq('id', pessoa.id);
     
     if (error) {
-      console.error("Erro ao excluir:", error);
       alert(`Erro ao excluir do banco! Detalhe: ${error.message}`);
       return;
     }
-
     await carregarDados();
   };
 
-  // ============================================================================
-  // LISTAGEM E FILTROS INTELIGENTES (useMemo)
-  // ============================================================================
   const pessoasFiltradas = useMemo(() => {
     let lista = [...pessoas];
-    
     if (filtroTipo !== 'Todos') lista = lista.filter(p => p.tipoCadastro === filtroTipo);
     if (filtroStatus !== 'Todos') lista = lista.filter(p => p.status === filtroStatus);
     
@@ -239,14 +209,12 @@ export default function CadastroPessoa() {
         (p.codigo && p.codigo.toLowerCase().includes(b))
       );
     }
-
     lista.sort((a, b) => {
       if (ordenacao === 'Nome A-Z') return a.nome.localeCompare(b.nome);
       if (ordenacao === 'Nome Z-A') return b.nome.localeCompare(a.nome);
       if (ordenacao === 'Mais Recente') return b.id - a.id;
       return 0;
     });
-
     return lista;
   }, [pessoas, busca, filtroTipo, filtroStatus, ordenacao]);
 
@@ -269,18 +237,24 @@ export default function CadastroPessoa() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // ============================================================================
-  // OUTRAS ABAS (Motoristas, Veículos, Safras)
-  // ============================================================================
-  const salvarOutro = (chave: string, dado: any, setAux: any, inicial: any) => {
-    const listaAtual = JSON.parse(localStorage.getItem(chave) || '[]');
-    localStorage.setItem(chave, JSON.stringify([...listaAtual, { id: Date.now(), ...dado }]));
-    carregarDados(); setAux(inicial);
+  // 🚀 FUNÇÕES DE OUTRAS ABAS REFATORADAS PARA O SUPABASE
+  const salvarOutro = async (tabela: string, dado: any, setAux: any, inicial: any) => {
+    const { error } = await supabase.from(tabela).insert([dado]);
+    if (error) {
+      alert(`Erro ao salvar ${tabela} na nuvem! Detalhe: ${error.message}`);
+      return;
+    }
+    await carregarDados(); 
+    setAux(inicial);
   };
-  const excluirOutro = (chave: string, id: number) => {
-    const listaAtual = JSON.parse(localStorage.getItem(chave) || '[]');
-    localStorage.setItem(chave, JSON.stringify(listaAtual.filter((i:any) => i.id !== id && i !== id))); 
-    carregarDados();
+
+  const excluirOutro = async (tabela: string, id: number) => {
+    const { error } = await supabase.from(tabela).delete().eq('id', id);
+    if (error) {
+      alert(`Erro ao excluir de ${tabela}! Detalhe: ${error.message}`);
+      return;
+    }
+    await carregarDados();
   };
 
   return (
@@ -291,20 +265,14 @@ export default function CadastroPessoa() {
           <Link to="/" className="flex items-center gap-2 text-gray-600 font-medium hover:text-blue-600 transition"><ArrowLeft size={20} /> Voltar ao Painel</Link>
         </div>
 
-        {/* NAVEGAÇÃO DE ABAS */}
         <div className="flex gap-4 border-b border-gray-200 print:hidden overflow-x-auto">
           {['Pessoas', 'Motoristas', 'Veículos', 'Safras'].map(aba => (
             <button key={aba} onClick={() => {setAbaAtiva(aba); setModoFormulario(false);}} className={`pb-3 font-bold text-lg transition-colors border-b-2 px-4 whitespace-nowrap ${abaAtiva === aba ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-blue-500'}`}>{aba}</button>
           ))}
         </div>
 
-        {/* ===================================================================
-            ABA 1: PESSOAS (MÓDULO ERP COMPLETO)
-        ======================================================================= */}
         {abaAtiva === 'Pessoas' && !modoFormulario && (
           <div className="space-y-6 animate-fade-in print:hidden">
-            
-            {/* Cards de Resumo */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-blue-500"><p className="text-xs font-bold text-gray-400 uppercase">Total de Cadastros</p><p className="font-bold text-2xl">{stats.total}</p></div>
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-green-500"><p className="text-xs font-bold text-gray-400 uppercase">Apenas Clientes</p><p className="font-bold text-2xl text-green-600">{stats.clientes}</p></div>
@@ -313,7 +281,6 @@ export default function CadastroPessoa() {
               <div className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-emerald-500"><p className="text-xs font-bold text-gray-400 uppercase">Cadastros Ativos</p><p className="font-bold text-2xl text-emerald-600">{stats.ativos}</p></div>
             </div>
 
-            {/* Painel de Controle e Filtros */}
             <div className="bg-white p-6 rounded-xl shadow-sm border">
               <div className="flex flex-col lg:flex-row justify-between gap-4 mb-6">
                 <div className="flex-1 flex gap-4">
@@ -334,7 +301,6 @@ export default function CadastroPessoa() {
                 </div>
               </div>
 
-              {/* Tabela de Dados */}
               <div className="overflow-x-auto border rounded-lg">
                 <table className="w-full text-left text-sm whitespace-nowrap">
                   <thead className="bg-slate-50 border-b">
@@ -366,9 +332,6 @@ export default function CadastroPessoa() {
           </div>
         )}
 
-        {/* ===================================================================
-            FORMULÁRIO DE PESSOA (Mestre de Dados)
-        ======================================================================= */}
         {modoFormulario && (
           <form onSubmit={handleSalvarPessoa} className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 space-y-8 animate-fade-in relative print:hidden">
             
@@ -380,7 +343,6 @@ export default function CadastroPessoa() {
               <button type="button" onClick={() => setModoFormulario(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 p-2 rounded-full transition"><X size={24}/></button>
             </div>
 
-            {/* SEÇÃO: INFORMAÇÕES PRINCIPAIS */}
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><FileText size={16}/> Dados Principais</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -418,7 +380,6 @@ export default function CadastroPessoa() {
               </div>
             </div>
 
-            {/* SEÇÃO: ENDEREÇO E CONTATO */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-dashed">
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2"><MapPin size={16}/> Endereço Completo</h3>
@@ -449,7 +410,6 @@ export default function CadastroPessoa() {
               </div>
             </div>
 
-            {/* SEÇÃO: AGRO E FINANCEIRO */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-dashed bg-slate-50 -mx-8 px-8 pb-8 rounded-b-2xl">
               <div className="space-y-4 mt-6">
                 <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tractor size={16}/> Dados Comerciais / Agro</h3>
@@ -491,7 +451,7 @@ export default function CadastroPessoa() {
         )}
 
         {/* ===================================================================
-            ABAS SECUNDÁRIAS (Mantidas como solicitado)
+            ABAS SECUNDÁRIAS AGORA LIGADAS AO SUPABASE
         ======================================================================= */}
         {abaAtiva === 'Motoristas' && (
           <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4 animate-fade-in print:hidden">
@@ -499,11 +459,11 @@ export default function CadastroPessoa() {
             <div className="flex gap-4">
               <input className="border p-2.5 rounded-lg w-1/2 bg-slate-50" placeholder="Nome do Motorista" value={auxMot.nome} onChange={e=>setAuxMot({...auxMot, nome: e.target.value})} />
               <input className="border p-2.5 rounded-lg w-1/4 bg-slate-50" placeholder="CNH" value={auxMot.cnh} onChange={e=>setAuxMot({...auxMot, cnh: e.target.value})} />
-              <button onClick={() => { if(auxMot.nome) salvarOutro('listaMotoristas', auxMot, setAuxMot, {nome:'', cnh:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
+              <button onClick={() => { if(auxMot.nome) salvarOutro('motoristas', auxMot, setAuxMot, {nome:'', cnh:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
             </div>
             <table className="w-full text-left border mt-4 rounded-lg overflow-hidden">
                 <thead className="bg-slate-50 border-b"><tr><th className="p-3">Nome</th><th className="p-3">CNH</th><th className="p-3 text-center">Ações</th></tr></thead>
-                <tbody>{motoristas.map((m:any) => <tr key={m.id} className="border-b hover:bg-slate-50"><td className="p-3 font-medium">{m.nome}</td><td className="p-3 text-gray-500">{m.cnh}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('listaMotoristas', m.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
+                <tbody>{motoristas.map((m:any) => <tr key={m.id} className="border-b hover:bg-slate-50"><td className="p-3 font-medium">{m.nome}</td><td className="p-3 text-gray-500">{m.cnh}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('motoristas', m.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
             </table>
           </div>
         )}
@@ -514,11 +474,11 @@ export default function CadastroPessoa() {
             <div className="flex gap-4">
               <input className="border p-2.5 rounded-lg w-1/4 bg-slate-50 uppercase" placeholder="Placa" value={auxVei.placa} onChange={e=>setAuxVei({...auxVei, placa: e.target.value})} />
               <input className="border p-2.5 rounded-lg w-1/2 bg-slate-50" placeholder="Descrição (Ex: Scania R440 Branca)" value={auxVei.descricao} onChange={e=>setAuxVei({...auxVei, descricao: e.target.value})} />
-              <button onClick={() => { if(auxVei.placa) salvarOutro('listaVeiculos', auxVei, setAuxVei, {placa:'', descricao:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
+              <button onClick={() => { if(auxVei.placa) salvarOutro('veiculos', auxVei, setAuxVei, {placa:'', descricao:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
             </div>
             <table className="w-full text-left border mt-4 rounded-lg overflow-hidden">
                 <thead className="bg-slate-50 border-b"><tr><th className="p-3">Placa</th><th className="p-3">Descrição</th><th className="p-3 text-center">Ações</th></tr></thead>
-                <tbody>{veiculos.map((v:any) => <tr key={v.id} className="border-b hover:bg-slate-50"><td className="p-3 font-bold uppercase">{v.placa}</td><td className="p-3 text-gray-600">{v.descricao}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('listaVeiculos', v.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
+                <tbody>{veiculos.map((v:any) => <tr key={v.id} className="border-b hover:bg-slate-50"><td className="p-3 font-bold uppercase">{v.placa}</td><td className="p-3 text-gray-600">{v.descricao}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('veiculos', v.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
             </table>
           </div>
         )}
@@ -528,13 +488,13 @@ export default function CadastroPessoa() {
              <h3 className="font-bold text-lg text-gray-800 border-b pb-2 mb-4">Gestão de Safras</h3>
              <div className="flex gap-4">
               <input className="border p-2.5 rounded-lg w-1/2 bg-slate-50" placeholder="Ex: 2026/2027" value={auxSafra} onChange={e=>setAuxSafra(e.target.value)} />
-              <button onClick={() => { if(auxSafra) salvarOutro('listaSafras', auxSafra, setAuxSafra, '')}} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700 transition">Adicionar Safra</button>
+              <button onClick={() => { if(auxSafra) salvarOutro('safras', { nome: auxSafra }, setAuxSafra, '')}} className="bg-blue-600 text-white px-6 rounded-lg font-bold hover:bg-blue-700 transition">Adicionar Safra</button>
             </div>
             <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-              {safras.map((s:any, i) => (
-                <div key={i} className="p-4 border rounded-lg flex justify-between items-center bg-slate-50 font-bold text-gray-700">
-                  {s.id ? s.id : s} {/* Trata strings antigas e objetos novos */}
-                  <button onClick={()=>excluirOutro('listaSafras', s.id || s)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={18}/></button>
+              {safras.map((s:any) => (
+                <div key={s.id} className="p-4 border rounded-lg flex justify-between items-center bg-slate-50 font-bold text-gray-700">
+                  {s.nome} 
+                  <button onClick={()=>excluirOutro('safras', s.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={18}/></button>
                 </div>
               ))}
             </div>
@@ -543,9 +503,6 @@ export default function CadastroPessoa() {
 
       </div>
 
-      {/* ===================================================================
-          MODAL DE VISUALIZAÇÃO
-      ======================================================================= */}
       {pessoaModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4 print:hidden" onClick={() => setPessoaModal(null)}>
           <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
