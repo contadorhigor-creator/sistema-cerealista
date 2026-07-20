@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, ArrowRightLeft, Printer, Package, Scale, Users, 
@@ -50,10 +51,25 @@ export default function Estoque() {
     } catch { return []; }
   };
 
-  const carregarDados = () => {
-    setListaClientes(getSafeArray('listaPessoas'));
-    setListaSafras(getSafeArray('listaSafras').length ? getSafeArray('listaSafras') : ['2025/2026']);
-    setPesagens(getSafeArray('listaPesagens'));
+// 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR DA NUVEM
+  const carregarDados = async () => {
+    // 1. Busca Clientes da Nuvem
+    const { data: clientesData } = await supabase.from('pessoas').select('*');
+    if (clientesData) setListaClientes(clientesData);
+
+    // 2. Busca Safras da Nuvem (convertendo para o formato de texto que o Estoque usa)
+    const { data: safrasData } = await supabase.from('safras').select('*');
+    if (safrasData && safrasData.length > 0) {
+      setListaSafras(safrasData.map((s: any) => s.nome));
+    } else {
+      setListaSafras(['2025/2026']);
+    }
+
+    // 3. Busca as Pesagens diretamente do Supabase! (ISSO RESOLVE O PROBLEMA)
+    const { data: pesagensData } = await supabase.from('pesagens').select('*');
+    if (pesagensData) setPesagens(pesagensData);
+
+    // 4. Transferências e Capacidade ainda mantemos no local por enquanto
     setTransferencias(getSafeArray('listaTransferencias'));
     const cap = localStorage.getItem('capacidadeSilo');
     if(cap) setCapacidadeSilo(Number(cap));
