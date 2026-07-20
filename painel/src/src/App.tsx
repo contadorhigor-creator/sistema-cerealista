@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { supabase } from './supabaseClient'; // Ajuste o caminho se necessário
+import { supabase } from '../supabaseClient'; // Adicione um ponto extra para subir uma pastaimport { supabase } from './supabaseClient'; // Ajuste o caminho se necessário
 import Login from './pages/Login';
 import Dashboard from './Dashboard';
 
