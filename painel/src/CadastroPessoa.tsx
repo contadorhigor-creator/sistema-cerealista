@@ -5,6 +5,7 @@ import {
   Tractor, X, Filter, FileSpreadsheet, Printer, ShieldAlert
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from './supabaseClient'; // 🚀 IMPORTAÇÃO DO SUPABASE ADICIONADA AQUI
 
 // ============================================================================
 // SERVIÇOS DE INTEGRAÇÃO (Simulando a pasta /services)
@@ -73,8 +74,19 @@ export default function CadastroPessoa() {
 
   useEffect(() => { carregarDados(); }, []);
 
-  const carregarDados = () => {
-    setPessoas(JSON.parse(localStorage.getItem('listaPessoas') || '[]'));
+  // 🚀 FUNÇÃO REESCRITA PARA BUSCAR DA NUVEM (SUPABASE)
+  const carregarDados = async () => {
+    // Busca as Pessoas do Supabase
+    const { data, error } = await supabase.from('pessoas').select('*');
+    
+    if (error) {
+      console.error("Erro ao buscar pessoas do banco:", error);
+    } else if (data) {
+      setPessoas(data);
+    }
+
+    // Por enquanto, mantemos as abas secundárias no local para não quebrar seu sistema 
+    // até criarmos as tabelas delas no Supabase futuramente.
     setListaMotoristas(JSON.parse(localStorage.getItem('listaMotoristas') || '[]'));
     setListaVeiculos(JSON.parse(localStorage.getItem('listaVeiculos') || '[]'));
     setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
@@ -134,7 +146,7 @@ export default function CadastroPessoa() {
   };
 
   // ============================================================================
-  // CRUD PESSOAS
+  // CRUD PESSOAS - 🚀 CONECTADO AO SUPABASE
   // ============================================================================
   const gerarCodigoPessoa = () => {
     const prefixo = form.tipoCadastro.charAt(0).toUpperCase();
@@ -142,28 +154,48 @@ export default function CadastroPessoa() {
     return `${prefixo}${numero}`;
   };
 
-  const handleSalvarPessoa = (e: React.FormEvent) => {
+  const handleSalvarPessoa = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.nome || !form.documento) return alert("Nome e Documento são obrigatórios.");
 
+    const isEdicao = !!form.id;
+
     const cadastroFinal = {
       ...form,
-      codigo: form.id ? form.codigo : gerarCodigoPessoa(),
-      dataCadastro: form.id ? form.dataCadastro : new Date().toLocaleDateString('pt-BR')
+      codigo: isEdicao ? form.codigo : gerarCodigoPessoa(),
+      dataCadastro: isEdicao ? form.dataCadastro : new Date().toLocaleDateString('pt-BR')
     };
 
-    const novaLista = form.id 
-      ? pessoas.map(p => p.id === form.id ? cadastroFinal : p)
-      : [...pessoas, { ...cadastroFinal, id: Date.now() }];
+    // Removemos o ID daqui para o banco gerar sozinho (ou para não bugar no Update)
+    const { id, ...dadosParaSalvar } = cadastroFinal;
 
-    localStorage.setItem('listaPessoas', JSON.stringify(novaLista));
-    carregarDados();
+    let erroSupabase;
+
+    if (isEdicao) {
+      // Atualizar registro existente no Supabase
+      const { error } = await supabase.from('pessoas').update(dadosParaSalvar).eq('id', form.id);
+      erroSupabase = error;
+    } else {
+      // Inserir novo registro no Supabase
+      const { error } = await supabase.from('pessoas').insert([dadosParaSalvar]);
+      erroSupabase = error;
+    }
+
+    // Se o banco reclamar de Segurança (RLS) ou colunas faltando, ele avisa aqui!
+    if (erroSupabase) {
+      console.error("Erro do Supabase:", erroSupabase);
+      alert(`Erro ao salvar no banco! Detalhe: ${erroSupabase.message}`);
+      return;
+    }
+
+    // Deu tudo certo! Recarrega da nuvem e limpa a tela.
+    await carregarDados(); 
     setModoFormulario(false);
     setForm(formInicial);
-    alert(`Cadastro de ${form.nome} salvo com sucesso!`);
+    alert(`Cadastro de ${form.nome} salvo com sucesso na nuvem! ☁️`);
   };
 
-  const handleExcluirPessoa = (pessoa: any) => {
+  const handleExcluirPessoa = async (pessoa: any) => {
     // Validação de Vínculos (Pesagens, Transf, Estoque)
     const temPesagem = pesagens.some(p => p.fornecedor === pessoa.nome);
     const temTransf = transferencias.some(t => t.de === pessoa.nome || t.para === pessoa.nome);
@@ -176,8 +208,16 @@ export default function CadastroPessoa() {
       if (!conf) return;
     }
 
-    localStorage.setItem('listaPessoas', JSON.stringify(pessoas.filter(p => p.id !== pessoa.id)));
-    carregarDados();
+    // Deleta do Supabase
+    const { error } = await supabase.from('pessoas').delete().eq('id', pessoa.id);
+    
+    if (error) {
+      console.error("Erro ao excluir:", error);
+      alert(`Erro ao excluir do banco! Detalhe: ${error.message}`);
+      return;
+    }
+
+    await carregarDados();
   };
 
   // ============================================================================
@@ -239,7 +279,7 @@ export default function CadastroPessoa() {
   };
   const excluirOutro = (chave: string, id: number) => {
     const listaAtual = JSON.parse(localStorage.getItem(chave) || '[]');
-    localStorage.setItem(chave, JSON.stringify(listaAtual.filter((i:any) => i.id !== id && i !== id))); // Suporta Safra (string) e Objeto
+    localStorage.setItem(chave, JSON.stringify(listaAtual.filter((i:any) => i.id !== id && i !== id))); 
     carregarDados();
   };
 
