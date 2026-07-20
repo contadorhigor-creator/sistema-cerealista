@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabaseClient'; 
 
-// Importações ajustadas aos nomes reais dos seus arquivos
+// Importações
 import Login from './Login';
 import Dashboard from './Dashboard';
 import CadastroPessoa from './CadastroPessoa'; 
 import Estoque from './Estoque';   
+import Pesagem from './Balanca'; // 👈 IMPORTAÇÃO ADICIONADA (Se o seu arquivo se chamar Pesagem.tsx, mude para './Pesagem')
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -40,10 +41,15 @@ export default function App() {
           element={session ? <Dashboard /> : <Navigate to="/login" />} 
         />
 
-        {/* Agora o sistema sabe que o /cadastro aponta para o CadastroPessoa */}
         <Route 
           path="/cadastro" 
           element={session ? <CadastroPessoa /> : <Navigate to="/login" />} 
+        />
+
+        {/* 👇 NOVA ROTA DA BALANÇA ADICIONADA AQUI 👇 */}
+        <Route 
+          path="/pesagem" 
+          element={session ? <Pesagem /> : <Navigate to="/login" />} 
         />
 
         <Route 
