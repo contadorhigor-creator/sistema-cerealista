@@ -237,15 +237,22 @@ export default function CadastroPessoa() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // 🚀 FUNÇÕES DE OUTRAS ABAS REFATORADAS PARA O SUPABASE
+  // 🚀 FUNÇÃO ATUALIZADA COM PROTEÇÃO CONTRA CLIQUE DUPLO
   const salvarOutro = async (tabela: string, dado: any, setAux: any, inicial: any) => {
+    // 1. Limpa os campos na tela imediatamente ao clicar
+    setAux(inicial); 
+
+    // 2. Envia para o Supabase em segundo plano
     const { error } = await supabase.from(tabela).insert([dado]);
+    
     if (error) {
       alert(`Erro ao salvar ${tabela} na nuvem! Detalhe: ${error.message}`);
+      setAux(dado); // Se a internet cair ou der erro, devolve o texto para o campo
       return;
     }
+    
+    // 3. Atualiza a tabela na tela
     await carregarDados(); 
-    setAux(inicial);
   };
 
   const excluirOutro = async (tabela: string, id: number) => {
