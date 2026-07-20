@@ -24,7 +24,7 @@ export default function Login() {
       // O Supabase já salvou a sessão no LocalStorage.
       // Agora, usamos o React Router para mudar de página sem recarregar.
       if (data) {
-        navigate('/dashboard');
+        window.location.href = '/dashboard';
       }
     } catch (error: any) {
       alert("Erro ao entrar: " + error.message);
