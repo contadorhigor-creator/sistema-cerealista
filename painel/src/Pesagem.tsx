@@ -72,25 +72,22 @@ export default function Pesagem() {
     // 2. Carrega as Pesagens da nuvem
     const { data: pesagensDB } = await supabase.from('pesagens').select('*').order('id', { ascending: false });
     if (pesagensDB) {
-      // Fazemos um "truque" para manter todo o seu código de interface funcionando sem mexer em nada:
-      // O Supabase tem um 'id' numérico, mas o seu sistema usa 'id' como o número do Ticket (ex: PES-000001)
       const formatadas = pesagensDB.map(p => ({
         ...p,
-        id_banco: p.id, // Guardamos o ID do banco escondido para usar na exclusão/edição
-        id: p.ticket    // O seu sistema continua lendo o id como ticket
+        id_banco: p.id,
+        id: p.ticket
       }));
       setHistorico(formatadas);
     }
 
-    // 3. Carrega Motoristas da nuvem (CORRIGIDO)
+    // 3. Carrega Motoristas da nuvem
     const { data: motoristasDB } = await supabase.from('motoristas').select('*').order('nome', { ascending: true });
     if (motoristasDB) setListaMotoristas(motoristasDB);
 
-    // 4. Carrega Veículos (Placas) da nuvem (CORRIGIDO)
+    // 4. Carrega Veículos (Placas) da nuvem
     const { data: veiculosDB } = await supabase.from('veiculos').select('*').order('placa', { ascending: true });
     if (veiculosDB) setListaVeiculos(veiculosDB);
 
-    // Mantemos Transferências e Safras no local por enquanto para não quebrar nada
     setTransferencias(JSON.parse(localStorage.getItem('listaTransferencias') || '[]'));
     setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
   };
@@ -152,7 +149,6 @@ export default function Pesagem() {
     e.preventDefault();
     if (!safra) return alert('Selecione uma safra!');
     
-    // Pega o número do ticket
     const ticketId = editando ? editando.id : gerarProximoTicket();
     
     const novaPesagemParaDB = {
@@ -168,12 +164,10 @@ export default function Pesagem() {
 
     let erroSupabase;
 
-    // Se tem editando.id_banco, significa que já existe lá na nuvem, então Atualiza
     if (editando && editando.id_banco) {
       const { error } = await supabase.from('pesagens').update(novaPesagemParaDB).eq('id', editando.id_banco);
       erroSupabase = error;
     } else {
-      // Inserção nova
       const { error } = await supabase.from('pesagens').insert([novaPesagemParaDB]);
       erroSupabase = error;
     }
@@ -185,7 +179,7 @@ export default function Pesagem() {
 
     setEditando(null);
     limparFormulario();
-    await carregarTudo(); // Recarrega da nuvem
+    await carregarTudo();
     alert(`Ticket ${ticketId} salvo na nuvem com sucesso! ☁️`);
   };
 
@@ -209,10 +203,34 @@ export default function Pesagem() {
   };
 
   const imprimirTicket = (item: any) => {
+    const pEnt = Number(item.pesoEntrada) || 0;
+    const pSai = Number(item.pesoSaida) || 0;
+    const magnitude = Math.abs(pEnt - pSai);
+    const u = Number(item.umidade) || 0;
+    const i = Number(item.impureza) || 0;
+    const a = Number(item.avarias) || 0;
+
+    let descUmidadePerc = 0;
+    let descImpurezaPerc = 0;
+    let descAvariasPerc = a;
+
+    if (item.produto === 'Milho') {
+      if (u > 14 && u <= 18) descUmidadePerc = (u - 14) * 1.4;
+      else if (u > 18) descUmidadePerc = (4 * 1.4) + ((u - 18) * 1.5);
+      descImpurezaPerc = Math.max(0, i - 1);
+    } else {
+      descUmidadePerc = u;
+      descImpurezaPerc = i;
+    }
+
+    const kgUmidade = magnitude * (descUmidadePerc / 100);
+    const kgImpureza = magnitude * (descImpurezaPerc / 100);
+    const kgAvarias = magnitude * (descAvariasPerc / 100);
+
     const w = window.open('', '_blank');
     w?.document.write(`
-      <div style="font-family: monospace; padding: 20px; width: 300px; margin: 0 auto;">
-        <h2 style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px;">TICKET DE PESAGEM</h2>
+      <div style="font-family: monospace; padding: 20px; width: 320px; margin: 0 auto; font-size: 12px;">
+        <h2 style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; font-size: 14px;">TICKET DE PESAGEM</h2>
         <p><strong>Ticket:</strong> ${item.id}</p>
         <p><strong>Data/Hora:</strong> ${item.data} - ${item.hora}</p>
         <p><strong>Operacao:</strong> ${item.tipo}</p>
@@ -221,9 +239,14 @@ export default function Pesagem() {
         <p><strong>Motorista:</strong> ${item.motorista || '-'}</p>
         <p><strong>Placa:</strong> ${item.placa || '-'}</p>
         <hr style="border: 1px dashed #000;" />
+        <p><strong>Classificação / Descontos:</strong></p>
+        <p>• Umidade: ${u.toFixed(2)}% (Desc: ${descUmidadePerc.toFixed(2)}% | ${formatarPeso(kgUmidade)} kg)</p>
+        <p>• Impureza: ${i.toFixed(2)}% (Desc: ${descImpurezaPerc.toFixed(2)}% | ${formatarPeso(kgImpureza)} kg)</p>
+        <p>• Avarias: ${a.toFixed(2)}% (Desc: ${descAvariasPerc.toFixed(2)}% | ${formatarPeso(kgAvarias)} kg)</p>
+        <hr style="border: 1px dashed #000;" />
         <p><strong>Peso Entrada:</strong> ${formatarPeso(item.pesoEntrada)} kg</p>
         <p><strong>Peso Saida:</strong> ${formatarPeso(item.pesoSaida)} kg</p>
-        <h3 style="text-align: center; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0;">LIQUIDO: ${formatarPeso(item.pesoLiquido)} kg</h3>
+        <h3 style="text-align: center; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; font-size: 14px;">LIQUIDO: ${formatarPeso(item.pesoLiquido)} kg</h3>
       </div>
     `);
     w?.document.close();
