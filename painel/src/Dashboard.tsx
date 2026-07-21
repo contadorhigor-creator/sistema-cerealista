@@ -10,6 +10,7 @@ import {
   RefreshCw, ExternalLink, Database, Users
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from './supabaseClient'; // ☁️ IMPORTAÇÃO DA NUVEM ADICIONADA AQUI
 
 // --- COMPONENTES VISUAIS ---
 const ResumoCard = ({ titulo, valor, subtitulo, icone: Icone, cor, bgIcone }: any) => (
@@ -54,8 +55,15 @@ export default function Dashboard() {
     }
   };
 
-  const carregarDadosInternos = () => {
-    setPesagens(getSafeArray('listaPesagens'));
+  // 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR PESAGENS DA NUVEM (SUPABASE)
+  const carregarDadosInternos = async () => {
+    // 1. Busca as Pesagens do Supabase
+    const { data: pesagensDB } = await supabase.from('pesagens').select('*');
+    if (pesagensDB) {
+      setPesagens(pesagensDB);
+    }
+
+    // 2. Transferências e Capacidade ainda mantemos no local
     setTransferencias(getSafeArray('listaTransferencias'));
     const cap = localStorage.getItem('capacidadeSilo');
     if(cap) setCapacidadeSilo(Number(cap));
