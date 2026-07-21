@@ -82,10 +82,16 @@ export default function Pesagem() {
       setHistorico(formatadas);
     }
 
-    // Mantemos as listas menores no local por enquanto para não quebrar nada
+    // 3. Carrega Motoristas da nuvem (CORRIGIDO)
+    const { data: motoristasDB } = await supabase.from('motoristas').select('*').order('nome', { ascending: true });
+    if (motoristasDB) setListaMotoristas(motoristasDB);
+
+    // 4. Carrega Veículos (Placas) da nuvem (CORRIGIDO)
+    const { data: veiculosDB } = await supabase.from('veiculos').select('*').order('placa', { ascending: true });
+    if (veiculosDB) setListaVeiculos(veiculosDB);
+
+    // Mantemos Transferências e Safras no local por enquanto para não quebrar nada
     setTransferencias(JSON.parse(localStorage.getItem('listaTransferencias') || '[]'));
-    setListaMotoristas(JSON.parse(localStorage.getItem('listaMotoristas') || '[]'));
-    setListaVeiculos(JSON.parse(localStorage.getItem('listaVeiculos') || '[]'));
     setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
   };
 
