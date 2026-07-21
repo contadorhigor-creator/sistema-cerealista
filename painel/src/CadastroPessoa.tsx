@@ -59,9 +59,25 @@ export default function CadastroPessoa() {
   };
   const [form, setForm] = useState<any>(formInicial);
 
-  const [auxMot, setAuxMot] = useState({ nome: '', cnh: '' });
-  const [auxVei, setAuxVei] = useState({ placa: '', descricao: '' });
+  // 🚀 ADICIONADO CAMPOS DE ID PARA PERMITIR A EDIÇÃO
+  const initMot = { id: null, nome: '', cnh: '' };
+  const initVei = { id: null, placa: '', descricao: '' };
+  
+  const [auxMot, setAuxMot] = useState<any>(initMot);
+  const [auxVei, setAuxVei] = useState<any>(initVei);
   const [auxSafra, setAuxSafra] = useState('');
+
+  // 🚀 TRAVA DE SEGURANÇA COM SENHA
+  const verificarSenhaAdmin = () => {
+    const senha = window.prompt("⚠️ AÇÃO RESTRITA\n\nDigite a senha de administrador para excluir:");
+    if (senha === 'n1th1l31') {
+      return true;
+    } else if (senha !== null) {
+      alert("❌ Senha incorreta! A exclusão foi cancelada.");
+      return false;
+    }
+    return false; // Retorna falso se o usuário clicar em Cancelar
+  };
 
   useEffect(() => { carregarDados(); }, []);
 
@@ -70,10 +86,10 @@ export default function CadastroPessoa() {
     const { data: pesData } = await supabase.from('pessoas').select('*');
     if (pesData) setPessoas(pesData);
 
-    const { data: motData } = await supabase.from('motoristas').select('*');
+    const { data: motData } = await supabase.from('motoristas').select('*').order('nome');
     if (motData) setListaMotoristas(motData);
 
-    const { data: veiData } = await supabase.from('veiculos').select('*');
+    const { data: veiData } = await supabase.from('veiculos').select('*').order('placa');
     if (veiData) setListaVeiculos(veiData);
 
     const { data: safraData } = await supabase.from('safras').select('*');
@@ -185,6 +201,9 @@ export default function CadastroPessoa() {
       if (!conf) return;
     }
 
+    // 🚀 CHAMA A FUNÇÃO DE SENHA AQUI
+    if (!verificarSenhaAdmin()) return;
+
     const { error } = await supabase.from('pessoas').delete().eq('id', pessoa.id);
     
     if (error) {
@@ -237,16 +256,27 @@ export default function CadastroPessoa() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // 🚀 FUNÇÃO ATUALIZADA COM PROTEÇÃO CONTRA CLIQUE DUPLO
+  // 🚀 FUNÇÃO ATUALIZADA PARA SUPORTAR EDIÇÃO (UPDATE) ALÉM DE INSERÇÃO
   const salvarOutro = async (tabela: string, dado: any, setAux: any, inicial: any) => {
+    const isEdicao = !!dado.id;
+    const { id, ...dadosParaSalvar } = dado; // Separa o ID do resto dos dados
+
     // 1. Limpa os campos na tela imediatamente ao clicar
     setAux(inicial); 
 
-    // 2. Envia para o Supabase em segundo plano
-    const { error } = await supabase.from(tabela).insert([dado]);
+    let erroSupabase;
     
-    if (error) {
-      alert(`Erro ao salvar ${tabela} na nuvem! Detalhe: ${error.message}`);
+    // 2. Verifica se vai atualizar ou inserir novo
+    if (isEdicao) {
+      const { error } = await supabase.from(tabela).update(dadosParaSalvar).eq('id', id);
+      erroSupabase = error;
+    } else {
+      const { error } = await supabase.from(tabela).insert([dadosParaSalvar]);
+      erroSupabase = error;
+    }
+    
+    if (erroSupabase) {
+      alert(`Erro ao salvar ${tabela} na nuvem! Detalhe: ${erroSupabase.message}`);
       setAux(dado); // Se a internet cair ou der erro, devolve o texto para o campo
       return;
     }
@@ -256,6 +286,9 @@ export default function CadastroPessoa() {
   };
 
   const excluirOutro = async (tabela: string, id: number) => {
+    // 🚀 CHAMA A FUNÇÃO DE SENHA AQUI TAMBÉM
+    if (!verificarSenhaAdmin()) return;
+
     const { error } = await supabase.from(tabela).delete().eq('id', id);
     if (error) {
       alert(`Erro ao excluir de ${tabela}! Detalhe: ${error.message}`);
@@ -274,7 +307,7 @@ export default function CadastroPessoa() {
 
         <div className="flex gap-4 border-b border-gray-200 print:hidden overflow-x-auto">
           {['Pessoas', 'Motoristas', 'Veículos', 'Safras'].map(aba => (
-            <button key={aba} onClick={() => {setAbaAtiva(aba); setModoFormulario(false);}} className={`pb-3 font-bold text-lg transition-colors border-b-2 px-4 whitespace-nowrap ${abaAtiva === aba ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-blue-500'}`}>{aba}</button>
+            <button key={aba} onClick={() => {setAbaAtiva(aba); setModoFormulario(false); setAuxMot(initMot); setAuxVei(initVei);}} className={`pb-3 font-bold text-lg transition-colors border-b-2 px-4 whitespace-nowrap ${abaAtiva === aba ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-blue-500'}`}>{aba}</button>
           ))}
         </div>
 
@@ -458,7 +491,7 @@ export default function CadastroPessoa() {
         )}
 
         {/* ===================================================================
-            ABAS SECUNDÁRIAS AGORA LIGADAS AO SUPABASE
+            ABAS SECUNDÁRIAS (AGORA COM FUNÇÃO DE EDITAR)
         ======================================================================= */}
         {abaAtiva === 'Motoristas' && (
           <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4 animate-fade-in print:hidden">
@@ -466,11 +499,30 @@ export default function CadastroPessoa() {
             <div className="flex gap-4">
               <input className="border p-2.5 rounded-lg w-1/2 bg-slate-50" placeholder="Nome do Motorista" value={auxMot.nome} onChange={e=>setAuxMot({...auxMot, nome: e.target.value})} />
               <input className="border p-2.5 rounded-lg w-1/4 bg-slate-50" placeholder="CNH" value={auxMot.cnh} onChange={e=>setAuxMot({...auxMot, cnh: e.target.value})} />
-              <button onClick={() => { if(auxMot.nome) salvarOutro('motoristas', auxMot, setAuxMot, {nome:'', cnh:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
+              
+              {/* BOTÃO ALTERNADO ENTRE ADICIONAR E ATUALIZAR */}
+              <button onClick={() => { if(auxMot.nome) salvarOutro('motoristas', auxMot, setAuxMot, initMot)}} className={`text-white px-6 rounded-lg font-bold flex-1 transition ${auxMot.id ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {auxMot.id ? 'Atualizar' : 'Adicionar'}
+              </button>
+              
+              {/* BOTÃO CANCELAR APARECE SÓ SE ESTIVER EDITANDO */}
+              {auxMot.id && (
+                <button onClick={() => setAuxMot(initMot)} className="bg-gray-200 text-gray-700 px-4 rounded-lg font-bold hover:bg-gray-300 transition" title="Cancelar Edição"><X size={20}/></button>
+              )}
             </div>
             <table className="w-full text-left border mt-4 rounded-lg overflow-hidden">
                 <thead className="bg-slate-50 border-b"><tr><th className="p-3">Nome</th><th className="p-3">CNH</th><th className="p-3 text-center">Ações</th></tr></thead>
-                <tbody>{motoristas.map((m:any) => <tr key={m.id} className="border-b hover:bg-slate-50"><td className="p-3 font-medium">{m.nome}</td><td className="p-3 text-gray-500">{m.cnh}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('motoristas', m.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
+                <tbody>{motoristas.map((m:any) => 
+                  <tr key={m.id} className="border-b hover:bg-slate-50">
+                    <td className="p-3 font-medium">{m.nome}</td>
+                    <td className="p-3 text-gray-500">{m.cnh}</td>
+                    <td className="p-3 text-center flex justify-center gap-1">
+                      {/* BOTÃO DE EDITAR ADICIONADO AQUI */}
+                      <button onClick={()=>setAuxMot({id: m.id, nome: m.nome, cnh: m.cnh || ''})} className="text-blue-500 p-1.5 hover:bg-blue-100 rounded" title="Editar"><Edit size={18}/></button>
+                      <button onClick={()=>excluirOutro('motoristas', m.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded" title="Excluir"><Trash2 size={18}/></button>
+                    </td>
+                  </tr>
+                )}</tbody>
             </table>
           </div>
         )}
@@ -481,11 +533,28 @@ export default function CadastroPessoa() {
             <div className="flex gap-4">
               <input className="border p-2.5 rounded-lg w-1/4 bg-slate-50 uppercase" placeholder="Placa" value={auxVei.placa} onChange={e=>setAuxVei({...auxVei, placa: e.target.value})} />
               <input className="border p-2.5 rounded-lg w-1/2 bg-slate-50" placeholder="Descrição (Ex: Scania R440 Branca)" value={auxVei.descricao} onChange={e=>setAuxVei({...auxVei, descricao: e.target.value})} />
-              <button onClick={() => { if(auxVei.placa) salvarOutro('veiculos', auxVei, setAuxVei, {placa:'', descricao:''})}} className="bg-blue-600 text-white px-6 rounded-lg font-bold flex-1 hover:bg-blue-700 transition">Adicionar</button>
+              
+              <button onClick={() => { if(auxVei.placa) salvarOutro('veiculos', auxVei, setAuxVei, initVei)}} className={`text-white px-6 rounded-lg font-bold flex-1 transition ${auxVei.id ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                {auxVei.id ? 'Atualizar' : 'Adicionar'}
+              </button>
+              
+              {auxVei.id && (
+                <button onClick={() => setAuxVei(initVei)} className="bg-gray-200 text-gray-700 px-4 rounded-lg font-bold hover:bg-gray-300 transition" title="Cancelar Edição"><X size={20}/></button>
+              )}
             </div>
             <table className="w-full text-left border mt-4 rounded-lg overflow-hidden">
                 <thead className="bg-slate-50 border-b"><tr><th className="p-3">Placa</th><th className="p-3">Descrição</th><th className="p-3 text-center">Ações</th></tr></thead>
-                <tbody>{veiculos.map((v:any) => <tr key={v.id} className="border-b hover:bg-slate-50"><td className="p-3 font-bold uppercase">{v.placa}</td><td className="p-3 text-gray-600">{v.descricao}</td><td className="p-3 text-center"><button onClick={()=>excluirOutro('veiculos', v.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded"><Trash2 size={18}/></button></td></tr>)}</tbody>
+                <tbody>{veiculos.map((v:any) => 
+                  <tr key={v.id} className="border-b hover:bg-slate-50">
+                    <td className="p-3 font-bold uppercase">{v.placa}</td>
+                    <td className="p-3 text-gray-600">{v.descricao}</td>
+                    <td className="p-3 text-center flex justify-center gap-1">
+                      {/* BOTÃO DE EDITAR ADICIONADO AQUI */}
+                      <button onClick={()=>setAuxVei({id: v.id, placa: v.placa, descricao: v.descricao || ''})} className="text-blue-500 p-1.5 hover:bg-blue-100 rounded" title="Editar"><Edit size={18}/></button>
+                      <button onClick={()=>excluirOutro('veiculos', v.id)} className="text-red-500 p-1.5 hover:bg-red-100 rounded" title="Excluir"><Trash2 size={18}/></button>
+                    </td>
+                  </tr>
+                )}</tbody>
             </table>
           </div>
         )}
@@ -501,7 +570,7 @@ export default function CadastroPessoa() {
               {safras.map((s:any) => (
                 <div key={s.id} className="p-4 border rounded-lg flex justify-between items-center bg-slate-50 font-bold text-gray-700">
                   {s.nome} 
-                  <button onClick={()=>excluirOutro('safras', s.id)} className="text-red-500 hover:bg-red-100 p-1 rounded"><Trash2 size={18}/></button>
+                  <button onClick={()=>excluirOutro('safras', s.id)} className="text-red-500 hover:bg-red-100 p-1 rounded" title="Excluir"><Trash2 size={18}/></button>
                 </div>
               ))}
             </div>
