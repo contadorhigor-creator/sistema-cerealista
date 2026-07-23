@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 export default function Estoque() {
   const [abaAtiva, setAbaAtiva] = useState('Silo');
   
-  // --- DADOS DO LOCAL STORAGE ---
+  // --- DADOS ---
   const [listaClientes, setListaClientes] = useState<any[]>([]);
   const [listaSafras, setListaSafras] = useState<string[]>([]);
   const [pesagens, setPesagens] = useState<any[]>([]);
@@ -44,20 +44,13 @@ export default function Estoque() {
 
   useEffect(() => { carregarDados(); }, []);
 
-  const getSafeArray = (key: string) => {
-    try {
-      const data = JSON.parse(localStorage.getItem(key) || '[]');
-      return Array.isArray(data) ? data : [];
-    } catch { return []; }
-  };
-
-// 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR DA NUVEM
+  // 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR TUDO DA NUVEM (INCLUSIVE TRANSFERÊNCIAS)
   const carregarDados = async () => {
     // 1. Busca Clientes da Nuvem
     const { data: clientesData } = await supabase.from('pessoas').select('*');
     if (clientesData) setListaClientes(clientesData);
 
-    // 2. Busca Safras da Nuvem (convertendo para o formato de texto que o Estoque usa)
+    // 2. Busca Safras da Nuvem 
     const { data: safrasData } = await supabase.from('safras').select('*');
     if (safrasData && safrasData.length > 0) {
       setListaSafras(safrasData.map((s: any) => s.nome));
@@ -65,12 +58,15 @@ export default function Estoque() {
       setListaSafras(['2025/2026']);
     }
 
-    // 3. Busca as Pesagens diretamente do Supabase! (ISSO RESOLVE O PROBLEMA)
+    // 3. Busca Pesagens da Nuvem
     const { data: pesagensData } = await supabase.from('pesagens').select('*');
     if (pesagensData) setPesagens(pesagensData);
 
-    // 4. Transferências e Capacidade ainda mantemos no local por enquanto
-    setTransferencias(getSafeArray('listaTransferencias'));
+    // 4. Busca Transferências da Nuvem
+    const { data: transfData } = await supabase.from('transferencias').select('*').order('id', { ascending: false });
+    if (transfData) setTransferencias(transfData);
+
+    // Capacidade mantida localmente pois é configuração do PC/Silo
     const cap = localStorage.getItem('capacidadeSilo');
     if(cap) setCapacidadeSilo(Number(cap));
   };
@@ -79,6 +75,14 @@ export default function Estoque() {
     setCapacidadeSilo(val);
     localStorage.setItem('capacidadeSilo', String(val));
     setEditandoCapacidade(false);
+  };
+
+  // --- TRAVA DE SEGURANÇA COM SENHA ---
+  const verificarSenhaAdmin = () => {
+    const senha = window.prompt("⚠️ AÇÃO RESTRITA\n\nDigite a senha de administrador para excluir:");
+    if (senha === 'n1th1l31') return true;
+    if (senha !== null) alert("❌ Senha incorreta! A exclusão foi cancelada.");
+    return false;
   };
 
   // --- FUNÇÕES UTILITÁRIAS ---
@@ -201,14 +205,13 @@ export default function Estoque() {
 
 
   // ============================================================================
-  // MÓDULO DE TRANSFERÊNCIAS (BANCÁRIO)
+  // MÓDULO DE TRANSFERÊNCIAS (BANCÁRIO) NA NUVEM
   // ============================================================================
   
   // 1. Simulação em Tempo Real (O "Preview Bancário")
   const prevTransf = useMemo(() => {
     let orig = 0, dest = 0;
     
-    // Busca os saldos atuais baseados no que o usuário selecionou
     if (trans.produto && trans.safra) {
       const sOrig = saldosProcessados.find((s:any) => s.cliente === trans.de && s.produto === trans.produto && s.safra === trans.safra);
       const sDest = saldosProcessados.find((s:any) => s.cliente === trans.para && s.produto === trans.produto && s.safra === trans.safra);
@@ -216,8 +219,6 @@ export default function Estoque() {
       if (sDest) dest = sDest.saldoKg;
     }
 
-    // Se estiver editando, o saldo atual do sistema JÁ ESTÁ afetado por esta transferência.
-    // Precisamos "devolver" o valor temporariamente para mostrar a projeção correta.
     if (editandoTrans) {
       orig += Number(editandoTrans.qtd);
       dest -= Number(editandoTrans.qtd);
@@ -296,8 +297,8 @@ export default function Estoque() {
     return { hojeQtd, mesQtd, hojeCount, mesCount };
   }, [transferencias]);
 
-  // 3. Ações
-  const handleSalvarTransferencia = () => {
+  // 🚀 3. AÇÕES NA NUVEM (INCLUIR/ALTERAR/EXCLUIR)
+  const handleSalvarTransferencia = async () => {
     if (!trans.de || !trans.para || trans.qtd <= 0 || !trans.safra || !trans.produto) {
       return alert('Preencha os campos obrigatórios (Origem, Destino, Produto, Safra e Qtd > 0).');
     }
@@ -309,32 +310,41 @@ export default function Estoque() {
     }
 
     const agoraData = new Date().toLocaleDateString('pt-BR');
-    const agoraHora = new Date().toLocaleTimeString('pt-BR');
+    const agoraHora = new Date().toLocaleTimeString('pt-BR').substring(0,5);
 
-    let historicoEdicoes = editandoTrans && editandoTrans.historicoEdicoes ? [...editandoTrans.historicoEdicoes] : [];
+    let historico_edicoes = editandoTrans && editandoTrans.historico_edicoes ? [...editandoTrans.historico_edicoes] : [];
     if (editandoTrans) {
-      historicoEdicoes.push(`Alterado em ${agoraData} às ${agoraHora} por ${trans.responsavel || 'Usuário'}`);
+      historico_edicoes.push(`Alterado em ${agoraData} às ${agoraHora} por ${trans.responsavel || 'Usuário'}`);
     } else {
-      historicoEdicoes.push(`Criado em ${agoraData} às ${agoraHora} por ${trans.responsavel || 'Usuário'}`);
+      historico_edicoes.push(`Criado em ${agoraData} às ${agoraHora} por ${trans.responsavel || 'Usuário'}`);
     }
 
     const novaTrans = {
-      id: editandoTrans ? editandoTrans.id : Date.now(),
-      ...trans,
+      de: trans.de, 
+      para: trans.para, 
+      produto: trans.produto, 
+      qtd: trans.qtd, 
+      safra: trans.safra, 
+      observacao: trans.observacao, 
+      responsavel: trans.responsavel,
       data: editandoTrans ? editandoTrans.data : agoraData,
       hora: editandoTrans ? editandoTrans.hora : agoraHora,
-      editadoEm: editandoTrans ? `${agoraData} ${agoraHora}` : undefined,
-      historicoEdicoes
+      editado_em: editandoTrans ? `${agoraData} ${agoraHora}` : null,
+      historico_edicoes
     };
 
-    const listaAtual = editandoTrans 
-      ? transferencias.map(t => t.id === editandoTrans.id ? novaTrans : t)
-      : [...transferencias, novaTrans];
+    if (editandoTrans) {
+      const { error } = await supabase.from('transferencias').update(novaTrans).eq('id', editandoTrans.id);
+      if (error) return alert(`Erro ao atualizar: ${error.message}`);
+      alert('Transferência atualizada com sucesso!');
+    } else {
+      const { error } = await supabase.from('transferencias').insert([novaTrans]);
+      if (error) return alert(`Erro ao salvar: ${error.message}`);
+      alert('Transferência realizada com sucesso!');
+    }
 
-    localStorage.setItem('listaTransferencias', JSON.stringify(listaAtual));
-    alert(editandoTrans ? 'Transferência atualizada!' : 'Transferência realizada com sucesso!');
-    carregarDados();
     limparFormularioTransf();
+    await carregarDados(); // Recarrega da nuvem
   };
 
   const iniciarEdicaoTransf = (t: any) => {
@@ -343,11 +353,16 @@ export default function Estoque() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const excluirTransferencia = (id: number) => {
-    if(window.confirm('Excluir permanentemente esta transferência do sistema?\nIsso reverterá os saldos imediatamente.')) {
-      localStorage.setItem('listaTransferencias', JSON.stringify(transferencias.filter(t => t.id !== id)));
-      carregarDados();
-    }
+  const excluirTransferencia = async (id: number) => {
+    if (!verificarSenhaAdmin()) return;
+
+    const conf = window.confirm('Excluir permanentemente esta transferência da nuvem?\nIsso reverterá os saldos dos clientes afetados imediatamente.');
+    if (!conf) return;
+
+    const { error } = await supabase.from('transferencias').delete().eq('id', id);
+    if (error) return alert(`Erro ao excluir: ${error.message}`);
+    
+    await carregarDados(); // Recarrega da nuvem atualizando os saldos
   };
 
   const limparFormularioTransf = () => {
@@ -366,7 +381,7 @@ export default function Estoque() {
 
   const exportarExcelTransferencias = () => {
     let csv = "ID;Data;Hora;Origem;Destino;Produto;Safra;Qtd(KG);Responsavel;Status Edicao\n";
-    transfFiltradas.forEach(t => { csv += `${t.id};${t.data};${t.hora};${t.de};${t.para};${t.produto};${t.safra};${t.qtd};${t.responsavel};${t.editadoEm ? 'Editado' : 'Original'}\n`; });
+    transfFiltradas.forEach(t => { csv += `${t.id};${t.data};${t.hora};${t.de};${t.para};${t.produto};${t.safra};${t.qtd};${t.responsavel};${t.editado_em ? 'Editado' : 'Original'}\n`; });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob); link.setAttribute('download', 'historico_transferencias.csv');
@@ -589,7 +604,7 @@ export default function Estoque() {
               </div>
 
               <button onClick={handleSalvarTransferencia} className="bg-purple-600 hover:bg-purple-700 transition text-white w-full py-4 rounded-lg font-bold shadow-lg flex justify-center items-center gap-2">
-                <Save size={20}/> {editandoTrans ? 'Atualizar Transferência' : 'Confirmar Transferência'}
+                <Save size={20}/> {editandoTrans ? 'Atualizar Transferência na Nuvem' : 'Confirmar Transferência na Nuvem'}
               </button>
             </div>
 
@@ -630,7 +645,7 @@ export default function Estoque() {
                         <td className="p-3 font-medium text-green-600">{t.para}</td>
                         <td className="p-3 text-gray-600">{t.produto} <span className="text-xs text-gray-400">({t.safra})</span></td>
                         <td className="p-3 text-right font-bold text-purple-700">{formatarPeso(t.qtd)} kg</td>
-                        <td className="p-3 text-center">{t.editadoEm ? <span className="text-[10px] bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-bold" title={t.editadoEm}>Editado</span> : <span className="text-[10px] text-gray-400">Original</span>}</td>
+                        <td className="p-3 text-center">{t.editado_em ? <span className="text-[10px] bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-bold" title={t.editado_em}>Editado</span> : <span className="text-[10px] text-gray-400">Original</span>}</td>
                         <td className="p-3 flex gap-2 justify-center">
                           <button onClick={() => setTransModal(t)} className="p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-800 rounded transition" title="Visualizar"><Eye size={16}/></button>
                           <button onClick={() => iniciarEdicaoTransf(t)} className="p-1.5 text-blue-500 hover:bg-blue-100 hover:text-blue-700 rounded transition" title="Editar"><Edit size={16}/></button>
@@ -680,11 +695,11 @@ export default function Estoque() {
               {transModal.observacao && <div><p className="text-xs font-bold text-gray-400 uppercase">Observações</p><p className="font-medium text-gray-800 bg-gray-50 p-3 rounded-lg border mt-1">{transModal.observacao}</p></div>}
               
               {/* Auditoria */}
-              {transModal.historicoEdicoes && transModal.historicoEdicoes.length > 0 && (
+              {transModal.historico_edicoes && transModal.historico_edicoes.length > 0 && (
                 <div className="border-t pt-4 mt-4">
                   <p className="text-xs font-bold text-gray-400 uppercase mb-2">Histórico de Alterações</p>
                   <ul className="text-xs text-gray-500 space-y-1">
-                    {transModal.historicoEdicoes.map((ed:string, idx:number) => <li key={idx} className="flex items-center gap-1"><Clock size={12}/> {ed}</li>)}
+                    {transModal.historico_edicoes.map((ed:string, idx:number) => <li key={idx} className="flex items-center gap-1"><Clock size={12}/> {ed}</li>)}
                   </ul>
                 </div>
               )}
