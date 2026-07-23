@@ -5,7 +5,7 @@ import {
   Download, FileSpreadsheet, X, ChevronLeft, ChevronRight, UserSearch, FileText
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from './supabaseClient'; // ☁️ IMPORTAÇÃO DA NUVEM AQUI
+import { supabase } from './supabaseClient'; 
 
 export default function Pesagem() {
   const [abaAtiva, setAbaAtiva] = useState('Nova Pesagem');
@@ -21,6 +21,11 @@ export default function Pesagem() {
   // --- ESTADOS: NOVA PESAGEM ---
   const [editando, setEditando] = useState<any>(null);
   const [tipoOperacao, setTipoOperacao] = useState('ENTRADA');
+  
+  // NOVOS ESTADOS DE DATA E HORA MANUAIS
+  const [dataPesagem, setDataPesagem] = useState(new Date().toISOString().split('T')[0]);
+  const [horaPesagem, setHoraPesagem] = useState(new Date().toLocaleTimeString('pt-BR').substring(0,5));
+
   const [fornecedor, setFornecedor] = useState('');
   const [produto, setProduto] = useState('Milho');
   const [safra, setSafra] = useState('');
@@ -63,13 +68,10 @@ export default function Pesagem() {
     setPaginaAtual(1);
   }, [filtroRapido, dataInicio, dataFim, filtroCliente, filtroProduto, filtroSafra, filtroTipo, buscaTexto, ordenacao]);
 
-  // 🚀 BUSCA TUDO DIRETO DA NUVEM E MANTÉM COMPATIBILIDADE COM SEU SISTEMA
   const carregarTudo = async () => {
-    // 1. Carrega as Pessoas/Clientes da nuvem
     const { data: clientesDB } = await supabase.from('pessoas').select('*').order('nome', { ascending: true });
     if (clientesDB) setListaClientes(clientesDB);
 
-    // 2. Carrega as Pesagens da nuvem
     const { data: pesagensDB } = await supabase.from('pesagens').select('*').order('id', { ascending: false });
     if (pesagensDB) {
       const formatadas = pesagensDB.map(p => ({
@@ -80,11 +82,9 @@ export default function Pesagem() {
       setHistorico(formatadas);
     }
 
-    // 3. Carrega Motoristas da nuvem
     const { data: motoristasDB } = await supabase.from('motoristas').select('*').order('nome', { ascending: true });
     if (motoristasDB) setListaMotoristas(motoristasDB);
 
-    // 4. Carrega Veículos (Placas) da nuvem
     const { data: veiculosDB } = await supabase.from('veiculos').select('*').order('placa', { ascending: true });
     if (veiculosDB) setListaVeiculos(veiculosDB);
 
@@ -94,11 +94,22 @@ export default function Pesagem() {
 
   // --- FUNÇÕES UTILITÁRIAS ---
   const formatarPeso = (valor: number) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valor || 0);
+  
   const converterDataBRParaISO = (dataBr: string) => {
     if (!dataBr) return '';
-    const [d, m, y] = dataBr.split('/');
-    return `${y}-${m}-${d}`;
+    if (dataBr.includes('-')) return dataBr; // Já está em ISO
+    const partes = dataBr.split('/');
+    if (partes.length !== 3) return dataBr;
+    return `${partes[2]}-${partes[1]}-${partes[0]}`;
   };
+
+  const converterDataISOParaBR = (dataIso: string) => {
+    if (!dataIso) return '';
+    if (dataIso.includes('/')) return dataIso; // Já está em BR
+    const [y, m, d] = dataIso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+
   const hojeISO = new Date().toISOString().split('T')[0];
 
   // --- LÓGICA DE CÁLCULO DA NOVA PESAGEM ---
@@ -136,9 +147,10 @@ export default function Pesagem() {
     });
     return saldo;
   }, [historico, transferencias, fornecedor, safra]);
+  
   const avisoSaldoNegativo = tipoOperacao === 'SAIDA' && (saldoAtualCarga - liquidoFinalAbs < 0);
 
-  // --- AÇÕES NOVA PESAGEM ☁️ ---
+  // --- AÇÕES NOVA PESAGEM ---
   const gerarProximoTicket = () => {
     if (historico.length === 0) return 'PES-000001';
     const maxId = historico.reduce((max, p) => Math.max(max, parseInt(p.id?.replace(/\D/g, '') || 0)), 0);
@@ -148,6 +160,7 @@ export default function Pesagem() {
   const handleSalvar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!safra) return alert('Selecione uma safra!');
+    if (!dataPesagem) return alert('Informe a data da pesagem!');
     
     const ticketId = editando ? editando.id : gerarProximoTicket();
     
@@ -158,8 +171,8 @@ export default function Pesagem() {
       umidade: Number(umidade) || 0, impureza: Number(impureza) || 0, avarias: Number(avarias) || 0,
       status: pSai > 0 ? 'Finalizado' : 'Pendente',
       observacao, notaFiscal, romaneio, armazem,
-      data: editando ? editando.data : new Date().toLocaleDateString('pt-BR'),
-      hora: editando ? editando.hora : new Date().toLocaleTimeString('pt-BR')
+      data: converterDataISOParaBR(dataPesagem),
+      hora: horaPesagem
     };
 
     let erroSupabase;
@@ -185,10 +198,15 @@ export default function Pesagem() {
 
   const iniciarEdicao = (item: any) => {
     setAbaAtiva('Nova Pesagem');
-    setEditando(item); setTipoOperacao(item.tipo || 'ENTRADA');
+    setEditando(item); 
+    setTipoOperacao(item.tipo || 'ENTRADA');
+    
+    setDataPesagem(converterDataBRParaISO(item.data));
+    setHoraPesagem(item.hora ? item.hora.substring(0,5) : '');
+
     setFornecedor(item.fornecedor); setProduto(item.produto); setSafra(item.safra);
-    setMotorista(item.motorista); setPlaca(item.placa);
-    setPesoEntrada(item.pesoEntrada); setPesoSaida(item.pesoSaida);
+    setMotorista(item.motorista || ''); setPlaca(item.placa || '');
+    setPesoEntrada(item.pesoEntrada); setPesoSaida(item.pesoSaida || '');
     setUmidade(item.umidade || ''); setImpureza(item.impureza || ''); setAvarias(item.avarias || '');
     setObservacao(item.observacao || ''); setNotaFiscal(item.notaFiscal || ''); 
     setRomaneio(item.romaneio || ''); setArmazem(item.armazem || '');
@@ -196,7 +214,10 @@ export default function Pesagem() {
   };
 
   const limparFormulario = () => {
-    setEditando(null); setTipoOperacao('ENTRADA'); setFornecedor(''); setProduto('Milho'); 
+    setEditando(null); setTipoOperacao('ENTRADA'); 
+    setDataPesagem(new Date().toISOString().split('T')[0]);
+    setHoraPesagem(new Date().toLocaleTimeString('pt-BR').substring(0,5));
+    setFornecedor(''); setProduto('Milho'); 
     setMotorista(''); setPlaca(''); setSafra(''); setPesoEntrada(''); setPesoSaida(''); 
     setUmidade(''); setImpureza(''); setAvarias(''); setObservacao(''); setNotaFiscal(''); 
     setRomaneio(''); setArmazem('');
@@ -347,7 +368,7 @@ export default function Pesagem() {
       if (p.status === 'Finalizado' && p.fornecedor === consultaCliente && (consultaSafra === '' || p.safra === consultaSafra)) {
         if(p.tipo === 'ENTRADA') entradas += p.pesoLiquido;
         if(p.tipo === 'SAIDA') saidas += Math.abs(p.pesoLiquido);
-        if(!ultMov || p.data > ultMov) ultMov = p.data;
+        if(!ultMov || converterDataBRParaISO(p.data) > converterDataBRParaISO(ultMov)) ultMov = p.data;
         extratoList.push({ data: p.data, id: p.id, op: p.tipo === 'ENTRADA' ? 'Pesagem ENTRADA' : 'Pesagem SAÍDA', produto: p.produto, peso: p.saldo });
       }
     });
@@ -404,25 +425,54 @@ export default function Pesagem() {
               <form onSubmit={handleSalvar} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="space-y-6 lg:col-span-2">
                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Informações da Carga</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <select className="border p-3 rounded-lg md:col-span-2 bg-slate-50 outline-none" value={fornecedor} onChange={e=>setFornecedor(e.target.value)} required>
-                      <option value="">Cliente / Fornecedor *</option>
-                      {listaClientes.map(c => <option key={c.id || c.nome} value={c.nome}>{c.nome}</option>)}
-                    </select>
-                    <select className="border p-3 rounded-lg bg-slate-50 outline-none" value={safra} onChange={e=>setSafra(e.target.value)} required>
-                      <option value="">Safra *</option>
-                      {listaSafras.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <select className="border p-3 rounded-lg bg-slate-50" value={produto} onChange={e=>setProduto(e.target.value)}><option>Milho</option><option>Soja</option><option>Sorgo</option></select>
-                    <select className="border p-3 rounded-lg bg-slate-50" value={motorista} onChange={e=>setMotorista(e.target.value)}><option value="">Motorista (Opcional)</option>{listaMotoristas.map(m => <option key={m.id} value={m.nome}>{m.nome}</option>)}</select>
-                    <select className="border p-3 rounded-lg bg-slate-50 uppercase font-medium" value={placa} onChange={e=>setPlaca(e.target.value)}><option value="">Placa (Opcional)</option>{listaVeiculos.map(v => <option key={v.id} value={v.placa}>{v.placa}</option>)}</select>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Data</label>
+                      <input type="date" className="border p-3 rounded-lg bg-slate-50 outline-none text-gray-700 font-medium" value={dataPesagem} onChange={e=>setDataPesagem(e.target.value)} required />
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Hora</label>
+                      <input type="time" className="border p-3 rounded-lg bg-slate-50 outline-none text-gray-700 font-medium" value={horaPesagem} onChange={e=>setHoraPesagem(e.target.value)} required />
+                    </div>
+                    <div className="flex flex-col col-span-2">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Cliente / Fornecedor *</label>
+                      <select className="border p-3 rounded-lg bg-slate-50 outline-none" value={fornecedor} onChange={e=>setFornecedor(e.target.value)} required>
+                        <option value="">Selecione...</option>
+                        {listaClientes.map(c => <option key={c.id || c.nome} value={c.nome}>{c.nome}</option>)}
+                      </select>
+                    </div>
                   </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Safra *</label>
+                      <select className="border p-3 rounded-lg bg-slate-50 outline-none" value={safra} onChange={e=>setSafra(e.target.value)} required>
+                        <option value="">Selecione...</option>
+                        {listaSafras.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Produto</label>
+                      <select className="border p-3 rounded-lg bg-slate-50" value={produto} onChange={e=>setProduto(e.target.value)}><option>Milho</option><option>Soja</option><option>Sorgo</option></select>
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Motorista</label>
+                      <select className="border p-3 rounded-lg bg-slate-50" value={motorista} onChange={e=>setMotorista(e.target.value)}><option value="">(Opcional)</option>{listaMotoristas.map(m => <option key={m.id} value={m.nome}>{m.nome}</option>)}</select>
+                    </div>
+                    <div className="flex flex-col">
+                      <label className="text-xs font-bold text-gray-500 mb-1 uppercase">Placa</label>
+                      <select className="border p-3 rounded-lg bg-slate-50 uppercase font-medium" value={placa} onChange={e=>setPlaca(e.target.value)}><option value="">(Opcional)</option>{listaVeiculos.map(v => <option key={v.id} value={v.placa}>{v.placa}</option>)}</select>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-dashed">
                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Nota Fiscal" value={notaFiscal} onChange={e=>setNotaFiscal(e.target.value)} />
                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Romaneio" value={romaneio} onChange={e=>setRomaneio(e.target.value)} />
                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Armazém/Silo" value={armazem} onChange={e=>setArmazem(e.target.value)} />
-                    <input className="border p-3 rounded-lg bg-slate-50 md:col-span-3" placeholder="Observações" value={observacao} onChange={e=>setObservacao(e.target.value)} />
+                    <input className="border p-3 rounded-lg bg-slate-50 md:col-span-3" placeholder="Observações (Informações extras sobre a carga)" value={observacao} onChange={e=>setObservacao(e.target.value)} />
                   </div>
+                  
                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider pt-4 border-t border-dashed">Classificação / Qualidade</h3>
                   <div className="grid grid-cols-3 gap-4">
                     <input className="border p-3 rounded-lg bg-slate-50" placeholder="Umidade (%)" type="number" step="0.01" value={umidade} onChange={e=>setUmidade(e.target.value)} />
@@ -434,7 +484,7 @@ export default function Pesagem() {
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner flex flex-col justify-between">
                   <div>
                     <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2"><Scale size={16}/> Pesagem (KG)</h3>
-                    <input className="w-full border-2 border-blue-200 p-4 rounded-lg mb-3 text-xl font-bold bg-white focus:border-blue-500 outline-none" placeholder="Peso Entrada" type="number" value={pesoEntrada} onChange={e=>setPesoEntrada(e.target.value)} />
+                    <input className="w-full border-2 border-blue-200 p-4 rounded-lg mb-3 text-xl font-bold bg-white focus:border-blue-500 outline-none" placeholder="Peso Entrada" type="number" value={pesoEntrada} onChange={e=>setPesoEntrada(e.target.value)} required />
                     <input className="w-full border-2 border-blue-200 p-4 rounded-lg mb-4 text-xl font-bold bg-white focus:border-blue-500 outline-none" placeholder="Peso Saída (Tara)" type="number" value={pesoSaida} onChange={e=>setPesoSaida(e.target.value)} />
                   </div>
                   <div>
