@@ -55,7 +55,7 @@ export default function Dashboard() {
     }
   };
 
-  // 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR PESAGENS DA NUVEM (SUPABASE)
+  // 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR PESAGENS E TRANSFERÊNCIAS DA NUVEM (SUPABASE)
   const carregarDadosInternos = async () => {
     // 1. Busca as Pesagens do Supabase
     const { data: pesagensDB } = await supabase.from('pesagens').select('*');
@@ -63,8 +63,13 @@ export default function Dashboard() {
       setPesagens(pesagensDB);
     }
 
-    // 2. Transferências e Capacidade ainda mantemos no local
-    setTransferencias(getSafeArray('listaTransferencias'));
+    // 2. Busca as Transferências do Supabase
+    const { data: transfDB } = await supabase.from('transferencias').select('*');
+    if (transfDB) {
+      setTransferencias(transfDB);
+    }
+
+    // 3. Capacidade ainda mantemos no local (é configuração do PC local)
     const cap = localStorage.getItem('capacidadeSilo');
     if(cap) setCapacidadeSilo(Number(cap));
   };
