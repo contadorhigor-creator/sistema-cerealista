@@ -155,6 +155,10 @@ export default function Estoque() {
     });
 
     let lista = Object.values(mapa);
+    
+    // 🚀 FILTRO ADICIONADO AQUI: Remove clientes com saldo zero (usa limite de 0.01 para evitar dízimas de computador)
+    lista = lista.filter((s:any) => Math.abs(s.saldoKg) >= 0.01);
+
     if(buscaSilo) {
       const b = buscaSilo.toLowerCase();
       lista = lista.filter((s:any) => s.cliente.toLowerCase().includes(b) || s.produto.toLowerCase().includes(b) || s.safra.toLowerCase().includes(b));
