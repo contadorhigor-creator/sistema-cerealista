@@ -68,6 +68,7 @@ export default function Pesagem() {
     setPaginaAtual(1);
   }, [filtroRapido, dataInicio, dataFim, filtroCliente, filtroProduto, filtroSafra, filtroTipo, buscaTexto, ordenacao]);
 
+  // 🚀 FUNÇÃO ATUALIZADA PARA BUSCAR SAFRAS DO SUPABASE
   const carregarTudo = async () => {
     const { data: clientesDB } = await supabase.from('pessoas').select('*').order('nome', { ascending: true });
     if (clientesDB) setListaClientes(clientesDB);
@@ -88,8 +89,15 @@ export default function Pesagem() {
     const { data: veiculosDB } = await supabase.from('veiculos').select('*').order('placa', { ascending: true });
     if (veiculosDB) setListaVeiculos(veiculosDB);
 
+    // 🚀 AQUI ESTÁ A CORREÇÃO: AGORA ELE BUSCA AS SAFRAS DA NUVEM
+    const { data: safrasData } = await supabase.from('safras').select('*');
+    if (safrasData && safrasData.length > 0) {
+      setListaSafras(safrasData.map((s: any) => s.nome));
+    } else {
+      setListaSafras(['2025/2026']);
+    }
+
     setTransferencias(JSON.parse(localStorage.getItem('listaTransferencias') || '[]'));
-    setListaSafras(JSON.parse(localStorage.getItem('listaSafras') || '["2025/2026"]'));
   };
 
   // --- FUNÇÕES UTILITÁRIAS ---
