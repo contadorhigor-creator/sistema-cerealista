@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calculator, Save, ArrowLeft, Edit, Trash2, TrendingUp, 
-  DollarSign, Truck, Package, Search 
+  DollarSign, Truck, Package, Filter, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -19,6 +19,11 @@ export default function MediaCustos() {
   const [valorSaca, setValorSaca] = useState('');
   const [frete, setFrete] = useState('');
 
+  // Estados dos Filtros da Tabela
+  const [filtroDataInicio, setFiltroDataInicio] = useState('');
+  const [filtroDataFim, setFiltroDataFim] = useState('');
+  const [filtroFornecedor, setFiltroFornecedor] = useState('');
+
   // Estado do Simulador de Estoque
   const [estoqueAtualSacas, setEstoqueAtualSacas] = useState('');
 
@@ -32,8 +37,17 @@ export default function MediaCustos() {
     if (fornDB) setFornecedores(fornDB);
 
     // Busca histórico de compras
-    const { data: compDB } = await supabase.from('compras_custos').select('*').order('id', { ascending: false });
+    const { data: compDB } = await supabase.from('compras_custos').select('*');
     if (compDB) setCompras(compDB);
+  };
+
+  // --- FUNÇÕES UTILITÁRIAS DE DATA ---
+  // Converte DD/MM/YYYY para YYYY-MM-DD para o sistema conseguir ordenar e filtrar corretamente
+  const converterParaISO = (dataBR: string) => {
+    if (!dataBR) return '';
+    const partes = dataBR.split('/');
+    if (partes.length !== 3) return dataBR;
+    return `${partes[2]}-${partes[1]}-${partes[0]}`;
   };
 
   // --- CÁLCULOS AUTOMÁTICOS DO FORMULÁRIO ---
@@ -78,9 +92,7 @@ export default function MediaCustos() {
 
   const iniciarEdicao = (c: any) => {
     setEditando(c);
-    // Converte DD/MM/YYYY de volta para YYYY-MM-DD pro input type="date"
-    const partesData = c.data.split('/');
-    setDataCompra(`${partesData[2]}-${partesData[1]}-${partesData[0]}`);
+    setDataCompra(converterParaISO(c.data));
     setFornecedor(c.fornecedor);
     setProduto(c.produto);
     setKg(c.kg.toString());
@@ -102,28 +114,67 @@ export default function MediaCustos() {
     setFornecedor(''); setKg(''); setValorSaca(''); setFrete('');
   };
 
+  // --- LÓGICA DE FILTRAGEM E ORDENAÇÃO DA TABELA ---
+  const comprasFiltradas = useMemo(() => {
+    let filtradas = [...compras];
+
+    // 1. Aplica o filtro de Fornecedor
+    if (filtroFornecedor) {
+      filtradas = filtradas.filter(c => c.fornecedor === filtroFornecedor);
+    }
+
+    // 2. Aplica o filtro de Datas
+    if (filtroDataInicio || filtroDataFim) {
+      filtradas = filtradas.filter(c => {
+        const dataISO = converterParaISO(c.data);
+        let passaInicio = true;
+        let passaFim = true;
+        if (filtroDataInicio) passaInicio = dataISO >= filtroDataInicio;
+        if (filtroDataFim) passaFim = dataISO <= filtroDataFim;
+        return passaInicio && passaFim;
+      });
+    }
+
+    // 3. Ordena estritamente por DATA (Mais recente no topo)
+    filtradas.sort((a, b) => {
+      const dataA = converterParaISO(a.data);
+      const dataB = converterParaISO(b.data);
+      if (dataA > dataB) return -1;
+      if (dataA < dataB) return 1;
+      return b.id - a.id; // Desempate pelo ID
+    });
+
+    return filtradas;
+  }, [compras, filtroFornecedor, filtroDataInicio, filtroDataFim]);
+
   // --- MOTOR DE MÉDIA PONDERADA (FIFO) ---
-  // Calcula o preço médio baseado nas ÚLTIMAS compras que formam o estoque atual
   const resultadoMedia = useMemo(() => {
     const alvo = Number(estoqueAtualSacas);
     if (!alvo || alvo <= 0 || compras.length === 0) return { media: 0, sacasUsadas: 0, historicoInsuficiente: false };
 
+    // Garante que o cálculo vai pegar sempre as mais recentes primeiro, 
+    // mesmo que o usuário tenha esquecido de lançar uma nota e lançado atrasado.
+    const comprasOrdenadasParaCalculo = [...compras].sort((a, b) => {
+      const dataA = converterParaISO(a.data);
+      const dataB = converterParaISO(b.data);
+      if (dataA > dataB) return -1;
+      if (dataA < dataB) return 1;
+      return b.id - a.id;
+    });
+
     let sacasRestantesParaCalculo = alvo;
     let valorAcumulado = 0;
     
-    // As compras já vêm ordenadas do banco pela mais recente (ID decrescente)
-    for (let c of compras) {
+    for (let c of comprasOrdenadasParaCalculo) {
       if (sacasRestantesParaCalculo <= 0) break;
 
       const sacasDaCompra = Number(c.sacas);
       const custoDaSaca = Number(c.custo_final_saca);
 
       if (sacasDaCompra <= sacasRestantesParaCalculo) {
-        // Usa toda a compra
         valorAcumulado += (sacasDaCompra * custoDaSaca);
         sacasRestantesParaCalculo -= sacasDaCompra;
       } else {
-        // Usa apenas a fração necessária dessa compra para fechar o estoque
         valorAcumulado += (sacasRestantesParaCalculo * custoDaSaca);
         sacasRestantesParaCalculo = 0;
       }
@@ -135,7 +186,7 @@ export default function MediaCustos() {
     return {
       media: mediaFinal,
       sacasUsadas: sacasCalculadas,
-      historicoInsuficiente: sacasRestantesParaCalculo > 0 // Se faltou histórico pra fechar a conta
+      historicoInsuficiente: sacasRestantesParaCalculo > 0
     };
   }, [estoqueAtualSacas, compras]);
 
@@ -246,12 +297,40 @@ export default function MediaCustos() {
           </form>
         </div>
 
-        {/* 3. HISTÓRICO DE COMPRAS */}
+        {/* 3. HISTÓRICO DE COMPRAS COM FILTROS */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-6 border-b flex justify-between items-center bg-slate-50">
             <h3 className="font-bold text-gray-800 flex items-center gap-2">Histórico de Aquisições</h3>
-            <span className="text-sm font-bold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">{compras.length} registros</span>
+            <span className="text-sm font-bold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">{comprasFiltradas.length} registros</span>
           </div>
+
+          {/* BARRA DE FILTROS */}
+          <div className="p-4 bg-white border-b flex flex-wrap gap-4 items-end">
+            <div className="flex flex-col">
+              <label className="text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Filter size={12}/> Data Inicial</label>
+              <input type="date" className="border border-gray-200 p-2 rounded-lg text-sm bg-slate-50 outline-none" value={filtroDataInicio} onChange={e=>setFiltroDataInicio(e.target.value)} />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Filter size={12}/> Data Final</label>
+              <input type="date" className="border border-gray-200 p-2 rounded-lg text-sm bg-slate-50 outline-none" value={filtroDataFim} onChange={e=>setFiltroDataFim(e.target.value)} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[200px]">
+              <label className="text-xs font-bold text-gray-500 mb-1 flex items-center gap-1"><Filter size={12}/> Fornecedor</label>
+              <select className="border border-gray-200 p-2 rounded-lg text-sm bg-slate-50 outline-none" value={filtroFornecedor} onChange={e=>setFiltroFornecedor(e.target.value)}>
+                <option value="">Todos os Fornecedores</option>
+                {fornecedores.map(f => <option key={f.nome} value={f.nome}>{f.nome}</option>)}
+              </select>
+            </div>
+            {(filtroDataInicio || filtroDataFim || filtroFornecedor) && (
+              <button 
+                onClick={() => { setFiltroDataInicio(''); setFiltroDataFim(''); setFiltroFornecedor(''); }} 
+                className="text-xs font-bold text-red-500 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center gap-1 border border-transparent hover:border-red-100 transition"
+              >
+                <X size={14}/> Limpar Filtros
+              </button>
+            )}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
               <thead className="bg-white border-b">
@@ -266,7 +345,7 @@ export default function MediaCustos() {
                 </tr>
               </thead>
               <tbody>
-                {compras.map(c => (
+                {comprasFiltradas.map(c => (
                   <tr key={c.id} className="border-b hover:bg-slate-50 transition">
                     <td className="p-4 font-medium text-gray-600">{c.data}</td>
                     <td className="p-4 font-bold text-gray-800">{c.fornecedor}</td>
@@ -280,8 +359,8 @@ export default function MediaCustos() {
                     </td>
                   </tr>
                 ))}
-                {compras.length === 0 && (
-                  <tr><td colSpan={7} className="p-12 text-center text-gray-400">Nenhuma compra registrada no histórico.</td></tr>
+                {comprasFiltradas.length === 0 && (
+                  <tr><td colSpan={7} className="p-12 text-center text-gray-400">Nenhuma compra encontrada para os filtros atuais.</td></tr>
                 )}
               </tbody>
             </table>
