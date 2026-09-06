@@ -7,10 +7,10 @@ import {
   Package, Scale, Truck, ArrowDownRight, ArrowUpRight, ArrowRightLeft,
   AlertTriangle, Clock, LayoutDashboard, FileText, Settings, 
   DollarSign, Newspaper, Calendar as CalendarIcon, TrendingUp, TrendingDown, 
-  RefreshCw, ExternalLink, Database, Users
+  RefreshCw, ExternalLink, Database, Users, Calculator // 👈 Ícone da calculadora adicionado aqui
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from './supabaseClient'; // ☁️ IMPORTAÇÃO DA NUVEM ADICIONADA AQUI
+import { supabase } from './supabaseClient'; 
 
 // --- COMPONENTES VISUAIS ---
 const ResumoCard = ({ titulo, valor, subtitulo, icone: Icone, cor, bgIcone }: any) => (
@@ -297,6 +297,10 @@ export default function Dashboard() {
           <Link to="/cadastro" className="flex items-center gap-3 hover:bg-slate-800 px-4 py-3 rounded-lg transition"><FileText size={20} /> Cadastros</Link>
           <Link to="/pesagem" className="flex items-center gap-3 hover:bg-slate-800 px-4 py-3 rounded-lg transition"><Truck size={20} /> Balança / Pesagem</Link>
           <Link to="/estoque" className="flex items-center gap-3 hover:bg-slate-800 px-4 py-3 rounded-lg transition"><Package size={20} /> Estoque / Silo</Link>
+          
+          {/* 👇 BOTÃO DO CUSTO MÉDIO ADICIONADO AQUI 👇 */}
+          <Link to="/media" className="flex items-center gap-3 hover:bg-slate-800 px-4 py-3 rounded-lg transition"><Calculator size={20} /> Custo Médio (CMV)</Link>
+          
           <Link to="/configuracoes" className="flex items-center gap-3 hover:bg-slate-800 px-4 py-3 rounded-lg transition"><Settings size={20} /> Configurações</Link>
         </nav>
       </aside>

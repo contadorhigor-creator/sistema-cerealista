@@ -7,7 +7,9 @@ import Login from './Login';
 import Dashboard from './Dashboard';
 import CadastroPessoa from './CadastroPessoa'; 
 import Estoque from './Estoque';   
-import Pesagem from './Pesagem'; // 👈 IMPORTAÇÃO ADICIONADA (Se o seu arquivo se chamar Pesagem.tsx, mude para './Pesagem')
+import Pesagem from './Pesagem'; 
+import MediaCustos from './MediaCustos'; // 👈 Tela de Custo Médio
+import Configuracoes from './Configuracoes'; // 👈 Tela de Configurações
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -46,7 +48,6 @@ export default function App() {
           element={session ? <CadastroPessoa /> : <Navigate to="/login" />} 
         />
 
-        {/* 👇 NOVA ROTA DA BALANÇA ADICIONADA AQUI 👇 */}
         <Route 
           path="/pesagem" 
           element={session ? <Pesagem /> : <Navigate to="/login" />} 
@@ -55,6 +56,18 @@ export default function App() {
         <Route 
           path="/estoque" 
           element={session ? <Estoque /> : <Navigate to="/login" />} 
+        />
+
+        {/* 👇 NOVA ROTA DE CUSTO MÉDIO 👇 */}
+        <Route 
+          path="/media" 
+          element={session ? <MediaCustos /> : <Navigate to="/login" />} 
+        />
+
+        {/* 👇 NOVA ROTA DE CONFIGURAÇÕES 👇 */}
+        <Route 
+          path="/configuracoes" 
+          element={session ? <Configuracoes /> : <Navigate to="/login" />} 
         />
 
         <Route 
